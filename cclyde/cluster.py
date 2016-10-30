@@ -24,14 +24,12 @@ class Cluster(object):
         '''Validates "cclyde" security group exits on AWS EC2, otherwise creates it.'''
 
         # Check if cclyde already exists as security group
-        sg = None
-        for sg in self.ec2.security_groups.iterator():
-            if sg.group_name == 'cclyde': break
+        sg = [sg for sg in self.ec2.security_groups.iterator() if sg.group_name == 'cclyde']
 
         # Either establish connection to the existing security group, or create one
-        if sg.group_name == 'cclyde':
+        if sg:
             print 'Found existing cclyde security group, connecting to it...'
-            self.security_group = self.ec2.SecurityGroup(sg.group_id)
+            self.security_group = self.ec2.SecurityGroup(sg[0].group_id)
         else:
             print '"cclyde" security group does not exit in your AWS EC2, creating one for you...'
             response = self.client.create_security_group(GroupName='cclyde',
