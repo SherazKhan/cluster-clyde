@@ -95,3 +95,4 @@ ENV/
 /test_notebook.ipynb
 .idea/
 test_notebook.ipynb
+/.ipynb_checkpoints/

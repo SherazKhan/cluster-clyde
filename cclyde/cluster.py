@@ -3,34 +3,42 @@ import boto3
 
 class Cluster(object):
 
-    nodes = 0
-
-    def __init__(self, key_name=None):
+    def __init__(self, key_name=None, nodes=2):
         """
         Constructor for cluster management object
         :param key_name: str - string of existing key name, if it doesn't exist it will be created.
         """
 
-        print 'Connecting to Boto3 EC2 resource...'
+        print 'Connecting to Boto3 EC2 resources...'
         self.ec2 = boto3.resource('ec2')
+        self.client = boto3.client('ec2')
 
-        print 'Validating keypair...'
-        self.validate_key(key_name)
+        print 'Validating security group...'
+        self.validate_security_group()
+
+        self.nodes = nodes
 
 
 
-    def validate_key(self, key_name):
-        '''Validates the supplied keyname, or creates a new one if it doesn't exist'''
+    def validate_security_group(self):
+        '''Validates "cclyde" security group exits on AWS EC2, otherwise creates it.'''
 
-        self.keypair = self.ec2.KeyPair(key_name)
+        # Check if cclyde already exists as security group
+        sg = None
+        for sg in self.ec2.security_groups.iterator():
+            if sg.group_name == 'cclyde': break
 
-        try:
-            self.keypair.load()
-        except Exception as exc:
-            print 'Key was not found... creating new one.'
-            self.keypair = self.ec2.create_key_pair(KeyName=key_name)
-            self.keypair.load()
-            print 'Successfully created new key: {}'.format(key_name)
+        # Either establish connection to the existing security group, or create one
+        if sg.group_name == 'cclyde':
+            print 'Found existing cclyde security group, connecting to it...'
+            self.security_group = self.ec2.SecurityGroup(sg.group_id)
+        else:
+            print '"cclyde" security group does not exit in your AWS EC2, creating one for you...'
+            response = self.client.create_security_group(GroupName='cclyde',
+                                                         Description='Cluster-Clyde Security Group')
+            self.security_group = self.ec2.SecurityGroup(response.get('GroupId'))
+        print 'Done.'
+
 
 
     def __str__(self):
