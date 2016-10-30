@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+
+# ignored files in dir
+aws_keys.json
+
 # C extensions
 *.so
 
@@ -87,3 +91,7 @@ ENV/
 
 # Rope project settings
 .ropeproject
+/aws_keys.json
+/test_notebook.ipynb
+.idea/
+test_notebook.ipynb
