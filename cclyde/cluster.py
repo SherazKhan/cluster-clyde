@@ -1,6 +1,8 @@
 import boto3
 import sys
 
+from utils.external_ip import get_ip
+
 
 class Cluster(object):
 
@@ -44,8 +46,7 @@ class Cluster(object):
         Ensures the configuration of the security group
         Allowing communication from each node to master and client to master ports 8787 and 8786
         '''
-        # TODO: Break this up, so that if one already exists, it doesn't keep the rest from being created.
-        from utils.external_ip import get_ip
+
         ip = get_ip()
         ip = ip + '/32' if ip else '0.0.0.0.0/0'  # Make warning about this.. or think of something else.
 
@@ -68,7 +69,7 @@ class Cluster(object):
              'FromPort': 80,
              'ToPort': 8786,
              'UserIdGroupPairs': [{'GroupName': self.security_group.group_name,
-                                   'GroupId': self.security_group.group_id},
+                                   'GroupId': self.security_group.group_id, },
                                   ],
              'IpRanges': [{'CidrIp': ip},
                           ],
@@ -102,7 +103,6 @@ class Cluster(object):
                 # Raised because ip permission(s) already exist
                 sys.stdout.write('\n-It appears you may already have cclyde security group configured for this:\n\n{}\n\n'
                                  .format(exc))
-        pass
 
 
 
