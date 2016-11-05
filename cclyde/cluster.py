@@ -1,19 +1,33 @@
 import boto3
 import sys
+import glob
+import os
 
 from utils.external_ip import get_ip
 
 
 class Cluster(object):
 
-    def __init__(self, key_name=None, nodes=2):
+    def __init__(self, pem_key='default', nodes=2, ami='ami-40d28157'):
         """
         Constructor for cluster management object
-        :param key_name: str - string of existing key name, if it doesn't exist it will be created.
+        :param pem_key: str - string of existing key name, if it doesn't exist it will be created.
+                              this only refers to the name as: 'cluster_clyde_<pem_key>.pem'
+                              as all cluster_clyde keys start with 'cluster_clyde_'
         """
         sys.stdout.write('Connecting to Boto3 EC2 resources...')
         self.ec2 = boto3.resource('ec2')
         self.client = boto3.client('ec2')
+        sys.stdout.write('Done.\n')
+
+        # Clean pem_key (make sure it is just cluster_clyde_<pem_key>.pem
+        if pem_key.endswith('.pem'):
+            pem_key = pem_key.replace('.pem', '')
+        if 'cluster_clyde_' in pem_key:
+            pem_key = pem_key.split('cluster_clyde_')[-1]
+        sys.stdout.write('Checking keypair exists using key_name: "cluster_clyde_{}"...'.format(pem_key))
+        self.pem_key = pem_key
+        self.check_key()
         sys.stdout.write('Done.\n')
 
         sys.stdout.write('Validating security group...')
@@ -29,9 +43,43 @@ class Cluster(object):
         sys.stdout.write('Done.\n')
 
         sys.stdout.write('Launching instances...')
-
+        self.launch_instances()
+        sys.stdout.write('Done.\n')
 
         self.nodes = nodes
+
+    def check_key(self):
+        '''Verify key exists, used to launch and connect to instances'''
+        home_dir = os.path.expanduser('~')
+        key = os.path.join(home_dir, '.aws', 'cluster_clyde_{}.pem'.format(self.pem_key))
+
+        if not os.path.exists(key):
+            sys.stdout.write('\n\tKey pair name: "cluster_clyde_{}" not found, creating it...'.format(self.pem_key))
+
+            # Enure AWS doesn't have this keypair on file, meaning user doesn't have it but amazon does.
+            keypairs = self.client.describe_key_pairs()
+            for keypair in keypairs.get('KeyPairs'):
+                if keypair.get('KeyName') == 'cluster_clyde_{}'.format(self.pem_key):
+                    sys.stdout.write('\n\tFound existing keypair on AWS that was not found locally, deleting it...')
+                    self.client.delete_key_pair(KeyName='cluster_clyde_{}'.format(self.pem_key))
+
+            # Create the keypair with boto3
+            sys.stdout.write('\n\tCreating keypair called {}...'.format('cluster_clyde_{}'.format(self.pem_key)))
+            self.pem_key = self.client.create_key_pair(KeyName='cluster_clyde_{}'.format(self.pem_key))
+
+            # Now write the key material to the .pem file
+            with open(key, 'w') as keyfile:
+                keyfile.write(self.pem_key.get('KeyMaterial'))
+
+        else:
+            sys.stdout.write('\n\tFound pem_key: "{}"...'.format(self.pem_key))
+
+        # set pem_key path to the existing .pem file
+        self.pem_key = key
+        self.pem_key_name = key.split('cluster_clyde_')[-1].replace('.pem', '')
+        return True
+
+
 
 
     def launch_instances(self):
