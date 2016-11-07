@@ -4,7 +4,7 @@ import glob
 import time
 import os
 
-from utils.external_ip import get_ip
+from utils import get_ip
 
 
 class Cluster(object):
