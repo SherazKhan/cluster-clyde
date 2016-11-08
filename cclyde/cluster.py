@@ -12,9 +12,11 @@ class Cluster(object):
     def __init__(self, key_name='cluster_clyde_default', n_nodes=2, ami='ami-40d28157', instance_type='t2.micro'):
         """
         Constructor for cluster management object
-        :param pem_key: str - string of existing key name, if it doesn't exist it will be created.
-                              this only refers to the name as: 'cluster_clyde_<pem_key>.pem'
-                              as all cluster_clyde keys start with 'cluster_clyde_'
+        :param key_name: str - string of existing key name, if it doesn't exist it will be created.
+                              this only refers to the name as: '<pem_key>.pem'
+        :param n_nodes: int - Number of nodes to launch
+        :param ami: str - Amazon Machine Image code
+        :param instance_type: str - The type of EC2 instances to launch.
         """
 
         # set attributes
@@ -29,8 +31,14 @@ class Cluster(object):
         sys.stdout.write('Connecting to Boto3 EC2 resources...')
         self.ec2 = boto3.resource('ec2')
         self.client = boto3.client('ec2')
-        sys.stdout.write('Done.\n')
+        sys.stdout.write('Done. Ready to start cluster. (cluster.start_cluster())\n')
 
+
+    def start_cluster(self):
+        """
+        Performas all aspects of launching the cluster; checks keypairs, VPC, subnet, security group config, etc.
+        :return:
+        """
         sys.stdout.write('Checking keypair exists using key_name: "{}"...'.format(self.key_name))
         self.check_key()
         sys.stdout.write('Done.\n')
