@@ -107,9 +107,9 @@ class Cluster(object):
             # Enure AWS doesn't have this keypair on file, meaning user doesn't have it but amazon does.
             keypairs = self.client.describe_key_pairs()
             for keypair in keypairs.get('KeyPairs'):
-                if keypair.get('KeyName') == 'cluster_clyde_{}'.format(self.key_name):
+                if keypair.get('KeyName') == self.key_name:
                     sys.stdout.write('\n\tFound existing keypair on AWS that was not found locally, deleting it...')
-                    self.client.delete_key_pair(KeyName='cluster_clyde_{}'.format(self.key_name))
+                    self.client.delete_key_pair(KeyName=self.key_name)
 
             # Create the keypair with boto3
             sys.stdout.write('\n\tCreating keypair called {}...'.format('{}'.format(self.key_name)))
