@@ -4,7 +4,7 @@ import glob
 import time
 import os
 
-from utils import get_ip
+from utils import get_ip, get_dask_permissions
 
 
 class Cluster(object):
@@ -110,7 +110,6 @@ class Cluster(object):
         return True
 
 
-
     def check_subnet(self):
         '''Checks if subnet exists in VPC and sets as self.subnet'''
         subnets = [subnet for subnet in self.vpc.subnets.filter(Filters=[{'Name': 'tag:Name',
@@ -191,6 +190,42 @@ class Cluster(object):
             self.security_group.load()
 
 
+    def configure_security_group(self):
+        '''
+        Ensures the configuration of the security group
+        Allowing communication from each node to master and client to master ports 8787 and 8786
+        '''
+
+        ip = get_ip()
+        ip = ip + '/32' if ip else '0.0.0.0.0/0'  # Make warning about this.. or think of something else.
+
+        # Required permissions
+        permissions = get_dask_permissions(obj=self, ip=ip)
+
+        # Try and apply each required permission to the security group.
+        for permission in permissions:
+            sys.stdout.write('\n\tWorking on permission: {} from port: {} to port: {}'.format(permission.get('IpProtocol'),
+                                                                                          permission.get('FromPort'),
+                                                                                          permission.get('ToPort')))
+            try:
+                self.security_group.authorize_ingress(
+                    DryRun=False,
+                    IpPermissions=[permission, ]
+                )
+                sys.stdout.write('...Done\n')
+            except Exception as exc:
+                # TODO: Check if this is the proper way to do the following exception checking and re-raising..:
+
+                # Raised because ip permission(s) already exist, probably, check if that's the case here
+                if 'InvalidPermission.Duplicate' in '{}'.format(exc):
+                    sys.stdout.write('...already exists! Passing.\n')
+
+                # If it was raised for another reason, pass it along as an exception
+                else:
+                    raise Exception(exc)
+
+
+
     def launch_instances(self):
         '''Launches EC2 instances'''
         instances = self.ec2.create_instances(ImageId=self.ami,
@@ -230,69 +265,6 @@ class Cluster(object):
             instance.load()
 
         self.instances = instances
-
-
-    def configure_security_group(self):
-        '''
-        Ensures the configuration of the security group
-        Allowing communication from each node to master and client to master ports 8787 and 8786
-        '''
-
-        ip = get_ip()
-        ip = ip + '/32' if ip else '0.0.0.0.0/0'  # Make warning about this.. or think of something else.
-
-        # Required permissions
-        permissions = [
-
-            # Allow connection to port 22 for client and all nodes
-            {'IpProtocol': 'tcp',
-             'FromPort': 22,
-             'ToPort': 22,
-             'UserIdGroupPairs': [{'VpcId': self.vpc.id,
-                                   'GroupId': self.security_group.group_id, },
-                                  ],
-             'IpRanges': [{'CidrIp': ip},
-                          ],
-             },
-
-            # Allow connection to port 8786 for client and all nodes
-            {'IpProtocol': 'tcp',
-             'FromPort': 80,
-             'ToPort': 8786,
-             'UserIdGroupPairs': [{'VpcId': self.vpc.id,
-                                   'GroupId': self.security_group.group_id, },
-                                  ],
-             'IpRanges': [{'CidrIp': ip},
-                          ],
-             },
-
-            # Allow connection to port 8787 for client and all nodes
-            {'IpProtocol': 'tcp',
-             'FromPort': 80,
-             'ToPort': 8787,
-             'UserIdGroupPairs': [{'VpcId': self.vpc.id,
-                                   'GroupId': self.security_group.group_id, },
-                                  ],
-             'IpRanges': [{'CidrIp': ip},
-                          ],
-             },
-        ]
-
-        # Try and apply each required permission to the security group.
-        for permission in permissions:
-            sys.stdout.write('\n\tWorking on permission: {} from port: {} to port: {}'.format(permission.get('IpProtocol'),
-                                                                                          permission.get('FromPort'),
-                                                                                          permission.get('ToPort')))
-            try:
-                self.security_group.authorize_ingress(
-                    DryRun=False,
-                    IpPermissions=[permission, ]
-                )
-                sys.stdout.write('...Done\n')
-            except Exception as exc:
-                # Raised because ip permission(s) already exist
-                sys.stdout.write('\n\t-It appears you may already have cclyde security group configured for this:\n\t{}\n'
-                                 .format(exc))
 
 
     def __str__(self):
