@@ -2,7 +2,6 @@ import boto3
 import sys
 import time
 import os
-import warnings
 import logging
 
 from utils import get_ip, get_dask_permissions
@@ -32,17 +31,20 @@ class Cluster(object):
         self.logger = logging.getLogger('Cluster-Clyde')
         self.logger.setLevel(logging.DEBUG)
 
-
         # set attributes
         self.ami = ami
         self.instance_type = instance_type
         self.key_name = key_name if not key_name.endswith('.pem') else key_name.replace('.pem', '')
+        self.pem_key_path = None
         self.n_nodes = n_nodes
         if self.n_nodes < 2:
             raise ValueError('Number of nodes should be >= 2')
         self.volume_size = int(volume_size)
         self.instances = []
         self.security_group = None
+        self.internet_gateway = None
+        self.route_table = None
+
 
         # Begin by just connecting to boto3, this alone ensures that user has config and credentials files in ~/.aws/
         sys.stdout.write('Connecting to Boto3 and EC2 resources...')
@@ -56,8 +58,11 @@ class Cluster(object):
         Performs all aspects of launching the cluster; checks keypairs, VPC, subnet, security group config, etc.
         :return:
         """
+
+        # TODO: Add internet gateway, add destination: 0.0.0.0/0 target: internet gateway to networking config; attached to VPC
+
         self.logger.warning('\tOnce instances are running, you may be accumulating charges from AWS; be sure to run '
-                            'cluster.stop_cluster() *AND* confirm instance are stopped from your AWS console!')
+                            'cluster.stop_cluster() *AND* confirm instances are stopped/terminated via AWS console!')
 
         sys.stdout.write('Checking keypair exists using key_name: "{}"...'.format(self.key_name))
         self.check_key()
@@ -79,11 +84,21 @@ class Cluster(object):
         self.configure_security_group()
         sys.stdout.write('Done configuring security group.\n')
 
+        sys.stdout.write('Checking for Cluster Clyde\'s internet gateway...')
+        self.check_internet_gateway()
+        sys.stdout.write('Done.\n')
+
+        sys.stdout.write('Attaching internet gateway to VPC if needed...')
+        self.check_internet_gateway_VPC_connection()
+        sys.stdout.write('Done.\n')
+
+        sys.stdout.write('Confirming proper VPC route table configuration...')
+        self.check_vpc_route_table()
+        sys.stdout.write('Done.\n')
+
         sys.stdout.write('Launching instances...')
         #self.launch_instances()
         sys.stdout.write('Done.\n')
-
-
 
 
     @staticmethod
@@ -128,6 +143,63 @@ class Cluster(object):
         with open(os.path.join(aws_dir, 'config'), 'w') as f:
             f.write('''[default]\nregion = {}'''
                     .format(region))
+        return True
+
+
+    def check_internet_gateway(self):
+        """
+        Checks that a 'cclyde_internet_gateway' exists, creates one if not.
+        """
+        internet_gateway = [ig for ig in self.ec2.internet_gateways.filter(Filters=[{'Name': 'tag:Name',
+                                                                                     'Values': ['cclyde_internet_gateway']}])]
+        # If an internet gateway was found, set it, otherwise create one.
+        if internet_gateway:
+            sys.stdout.write('found existing cclyde gateway...')
+            self.internet_gateway = internet_gateway[0]
+        else:
+            sys.stdout.write('no existing cclyde gateway, creating one...')
+            self.internet_gateway = self.ec2.create_internet_gateway(DryRun=False)
+            self.internet_gateway.create_tags(Tags=[{'Key': 'Name', 'Value': 'cclyde_internet_gateway'}])
+
+        self.internet_gateway.load()
+
+
+    def check_internet_gateway_VPC_connection(self):
+        """
+        Ensures that the internet gateway is attached to VPC
+        """
+        try:
+            self.internet_gateway.attach_to_vpc(DryRun=False, VpcId=self.vpc.id)
+        except Exception as exc:
+            if 'Resource.AlreadyAssociated' in '{}'.format(exc):
+                sys.stdout.write('gateway already associated with VPC...')
+            else:
+                raise Exception(exc)
+
+
+    def check_vpc_route_table(self):
+        """
+        Confirms the proper routing for the vpc route table.
+        """
+        route_table = [rt for rt in self.vpc.route_tables.all()
+                       if any([_rt.destination_cidr_block == self.vpc.cidr_block for _rt in rt.routes])]
+        if route_table:
+            sys.stdout.write('Found existing route table, confirming proper config...')
+            self.route_table = route_table[0]
+        else:
+            raise NotImplementedError('Route table should have been created automatically just by creating the VPC,'
+                                      ' a fix is not implemented')
+
+        # Confirm that the destinations on the route table include 0.0.0.0/0 --> id of internet gateway & cidr to local
+        if not any([True if rt_attr.get('DestinationCidrBlock') == '0.0.0.0/0' else False
+                    for rt_attr in self.route_table.routes_attribute]):
+            sys.stdout.write('\n\tadding 0.0.0.0/0 dest. with cclyde iternet-gateway as target to route table...')
+            self.route_table.create_route(DryRun=False,
+                                          DestinationCidrBlock='0.0.0.0/0',
+                                          GatewayId=self.internet_gateway.id)
+        self.route_table.load()
+        self.internet_gateway.load()
+        self.vpc.load()
         return True
 
 
@@ -281,7 +353,7 @@ class Cluster(object):
         sys.stdout.write('\rAll instances in running state!\nSetting node names...')
         for i, instance in enumerate(instances):
             instance.create_tags(
-                Tags=[{'Key': 'Name', 'Value': 'cclyde_node{}'.format(i) if i else 'cclyde_master_node'}])
+                Tags=[{'Key': 'Name', 'Value': 'cclyde_node-{}'.format(i) if i else 'cclyde_master_node'}])
             instance.load()
 
         self.instances = instances
