@@ -17,7 +17,7 @@ def get_dask_permissions(obj, ip):
     Returns list of permissions required by dask
     :param obj: instance of cluster object which is initialized up to point of configuring security group
     :param ip: external ip address for allowed ip ranges
-    :return: list of permissions required by boto3
+    :return: list of permissions formatted as required by boto3 for dask distributed
     """
     dask_permissions = [
 

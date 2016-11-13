@@ -1,8 +1,9 @@
 import boto3
 import sys
-import glob
 import time
 import os
+import warnings
+import logging
 
 from utils import get_ip, get_dask_permissions
 
@@ -10,7 +11,12 @@ from utils import get_ip, get_dask_permissions
 class Cluster(object):
 
 
-    def __init__(self, key_name='cluster_clyde_default', n_nodes=2, ami='ami-40d28157', instance_type='t2.micro'):
+    def __init__(self,
+                 key_name='cluster_clyde_default',
+                 n_nodes=2,
+                 ami='ami-40d28157',
+                 instance_type='t2.micro',
+                 volume_size=8):
         """
         Constructor for cluster management object
         :param key_name: str - string of existing key name, if it doesn't exist it will be created.
@@ -18,28 +24,41 @@ class Cluster(object):
         :param n_nodes: int - Number of nodes to launch
         :param ami: str - Amazon Machine Image code
         :param instance_type: str - The type of EC2 instances to launch.
+        :param volume_size: int - Size of attached volume to EC2 instance(s) in GB; 0 if no volume attached
         """
+
+        logging.basicConfig()
+        logging.captureWarnings(True)
+        self.logger = logging.getLogger('Cluster-Clyde')
+        self.logger.setLevel(logging.DEBUG)
+
 
         # set attributes
         self.ami = ami
         self.instance_type = instance_type
         self.key_name = key_name if not key_name.endswith('.pem') else key_name.replace('.pem', '')
         self.n_nodes = n_nodes
+        if self.n_nodes < 2:
+            raise ValueError('Number of nodes should be >= 2')
+        self.volume_size = int(volume_size)
         self.instances = []
         self.security_group = None
 
-        # Begin setting up and deploying cluster
-        sys.stdout.write('Connecting to Boto3 EC2 resources...')
+        # Begin by just connecting to boto3, this alone ensures that user has config and credentials files in ~/.aws/
+        sys.stdout.write('Connecting to Boto3 and EC2 resources...')
         self.ec2 = boto3.resource('ec2')
         self.client = boto3.client('ec2')
-        sys.stdout.write('Done. Ready to start cluster. (cluster.start_cluster())\n')
+        sys.stdout.write('Done. Ready to start cluster! Run: >>> cluster.start_cluster()\n')
 
 
     def start_cluster(self):
         """
-        Performas all aspects of launching the cluster; checks keypairs, VPC, subnet, security group config, etc.
+        Performs all aspects of launching the cluster; checks keypairs, VPC, subnet, security group config, etc.
         :return:
         """
+        self.logger.warning('\tOnce instances are running, you may be accumulating charges from AWS; be sure to run '
+                            'cluster.stop_cluster() *AND* confirm instance are stopped from your AWS console!')
+
         sys.stdout.write('Checking keypair exists using key_name: "{}"...'.format(self.key_name))
         self.check_key()
         sys.stdout.write('Done.\n')
@@ -63,6 +82,8 @@ class Cluster(object):
         sys.stdout.write('Launching instances...')
         #self.launch_instances()
         sys.stdout.write('Done.\n')
+
+
 
 
     @staticmethod
@@ -223,7 +244,6 @@ class Cluster(object):
                 # If it was raised for another reason, pass it along as an exception
                 else:
                     raise Exception(exc)
-
 
 
     def launch_instances(self):
