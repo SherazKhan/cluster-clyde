@@ -9,6 +9,7 @@ from utils import get_ip
 
 class Cluster(object):
 
+
     def __init__(self, key_name='cluster_clyde_default', n_nodes=2, ami='ami-40d28157', instance_type='t2.micro'):
         """
         Constructor for cluster management object
@@ -62,6 +63,52 @@ class Cluster(object):
         sys.stdout.write('Launching instances...')
         #self.launch_instances()
         sys.stdout.write('Done.\n')
+
+
+    @staticmethod
+    def make_credentials_file(aws_access_key_id, aws_secret_access_key):
+        """
+        Creates a credential file for user
+        be careful, this overwrites any existing credential file
+        @:param aws_access_key_id: str - Access key id given by AWS
+        @:param aws_secret_access_key: str - secret key provided in association with key id from AWS
+        """
+        # TODO: Make it so we can append profiles to credential file instead of just [default] profile
+
+        aws_dir = os.path.join(os.path.expanduser('~'), '.aws')
+
+        # If .aws isn't a directory in home folder, make it
+        if not os.path.isdir(aws_dir):
+            os.mkdir(aws_dir)
+
+        # write credential file with
+        with open(os.path.join(aws_dir, 'credentials'), 'w') as f:
+            f.write('''[default]\naws_access_key_id = {}\naws_secret_access_key = {}'''
+                    .format(aws_access_key_id, aws_secret_access_key))
+        return True
+
+
+    @staticmethod
+    def make_config_file(region):
+        """
+        Creates a config file for user
+        be careful, this overwrites any existing config file
+        @param region: str - AWS region ie. us-east-1
+        """
+        # TODO: Make it so we can append profiles to config file instead of just [default] profile
+
+        aws_dir = os.path.join(os.path.expanduser('~'), '.aws')
+
+        # If .aws isn't a directory in home folder, make it
+        if not os.path.isdir(aws_dir):
+            os.mkdir(aws_dir)
+
+        # write config file with
+        with open(os.path.join(aws_dir, 'config'), 'w') as f:
+            f.write('''[default]\nregion = {}'''
+                    .format(region))
+        return True
+
 
 
     def check_subnet(self):
