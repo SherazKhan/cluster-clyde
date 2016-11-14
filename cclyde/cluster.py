@@ -4,6 +4,7 @@ import time
 import os
 import logging
 
+from pssh import ParallelSSHClient, utils
 from utils import get_ip, get_dask_permissions
 
 
@@ -15,7 +16,7 @@ class Cluster(object):
                  n_nodes=2,
                  ami='ami-40d28157',
                  instance_type='t2.micro',
-                 volume_size=8):
+                 volume_size=0):
         """
         Constructor for cluster management object
         :param key_name: str - string of existing key name, if it doesn't exist it will be created.
@@ -24,6 +25,7 @@ class Cluster(object):
         :param ami: str - Amazon Machine Image code
         :param instance_type: str - The type of EC2 instances to launch.
         :param volume_size: int - Size of attached volume to EC2 instance(s) in GB; 0 if no volume attached
+                            if 0 - default instance storage is 8GB but will be lost upon cluster shutdown
         """
 
         logging.basicConfig()
@@ -58,8 +60,6 @@ class Cluster(object):
         Performs all aspects of launching the cluster; checks keypairs, VPC, subnet, security group config, etc.
         :return:
         """
-
-        # TODO: Add internet gateway, add destination: 0.0.0.0/0 target: internet gateway to networking config; attached to VPC
 
         self.logger.warning('\tOnce instances are running, you may be accumulating charges from AWS; be sure to run '
                             'cluster.stop_cluster() *AND* confirm instances are stopped/terminated via AWS console!')
@@ -97,7 +97,7 @@ class Cluster(object):
         sys.stdout.write('Done.\n')
 
         sys.stdout.write('Launching instances...')
-        #self.launch_instances()
+        self.launch_instances()
         sys.stdout.write('Done.\n')
 
 
@@ -146,6 +146,18 @@ class Cluster(object):
         return True
 
 
+    def create_ssh_client(self):
+        """Creates the parallel ssh client"""
+        client_key = utils.load_private_key(self.pem_key_path)
+        hosts = [node.public_ip_address for node in self.instances]
+        self.ssh_client = ParallelSSHClient(hosts=hosts, user='ubuntu', pkey=client_key)
+
+        
+    def run_cluster_command(self, command, show_output=True, include_master=True):
+        """Runs arbitrary command on all nodes in cluster"""
+        self.ssh_client.run_command(command)
+
+
     def check_internet_gateway(self):
         """
         Checks that a 'cclyde_internet_gateway' exists, creates one if not.
@@ -191,7 +203,7 @@ class Cluster(object):
                                       ' a fix is not implemented')
 
         # Confirm that the destinations on the route table include 0.0.0.0/0 --> id of internet gateway & cidr to local
-        if not any([True if rt_attr.get('DestinationCidrBlock') == '0.0.0.0/0' else False
+        if not any([rt_attr.get('DestinationCidrBlock') == '0.0.0.0/0'
                     for rt_attr in self.route_table.routes_attribute]):
             sys.stdout.write('\n\tadding 0.0.0.0/0 dest. with cclyde iternet-gateway as target to route table...')
             self.route_table.create_route(DryRun=False,
@@ -350,7 +362,7 @@ class Cluster(object):
                 time.sleep(1.0)
 
         # Assign tag names to all the nodes
-        sys.stdout.write('\rAll instances in running state!\nSetting node names...')
+        sys.stdout.write('\rAll {} instances in running state!\nSetting node names...'.format(self.n_nodes))
         for i, instance in enumerate(instances):
             instance.create_tags(
                 Tags=[{'Key': 'Name', 'Value': 'cclyde_node-{}'.format(i) if i else 'cclyde_master_node'}])
