@@ -16,7 +16,6 @@ class Cluster(object):
                  n_nodes=2,
                  ami='ami-40d28157',
                  instance_type='t2.micro',
-                 python_env='defaultenv',
                  volume_size=0):
         """
         Constructor for cluster management object
@@ -48,7 +47,6 @@ class Cluster(object):
         self.internet_gateway = None
         self.route_table = None
         self.loaded_paramiko_key = None  # paramiko loaded key
-        self.python_env = '/home/ubuntu/anaconda/envs/{}/bin '.format(python_env)  # Absolute path to python env
         self.nodes = []
         self.nodes_to_run_command = []
 
@@ -157,15 +155,12 @@ class Cluster(object):
         will be different"""
         self.loaded_paramiko_key = utils.load_private_key(self.pem_key_path)
 
-        # If nodes_to_run_command list is empty, we can assume we want to run the command on all nodes in the cluster
-        self.nodes_to_run_command = self.nodes_to_run_command if self.nodes_to_run_command else self.nodes
-
-        hosts = [node.get('public_ip') for node in self.nodes_to_run_command]
+        hosts = [node.get('public_ip') for node in self.nodes]
         return ParallelSSHClient(hosts=hosts, user='ubuntu', pkey=self.loaded_paramiko_key)
 
 
     def install_anaconda(self):
-        """Installs dask on all cluster nodes"""
+        """Installs Anaconda on all cluster nodes"""
 
         sys.stdout.write('Installing Anaconda on cluster')
         output = self.ssh_client.run_command(
@@ -184,10 +179,12 @@ class Cluster(object):
         pass
 
 
-    def run_cluster_command(self, command, target='entire-cluster', show_output=True):
+    def run_cluster_command(self, command, target='entire-cluster'):
         """Runs arbitrary command on all nodes in cluster
         command: str - command to run ie. "ls -l ~/"
         target: str - one of either 'entire-cluster', 'master', 'cluster-exclude-master', or specific node name
+        python_env_command: bool - if this is any command to use the environment's bin, the full path to the bin is
+                                   prepended infront of the command. ie /home/ubuntu/anaconda/envs/default/bin/<command>
         """
 
         # Assert the target is either the whole cluster, master, all but master or one of the specific nodes
@@ -209,6 +206,7 @@ class Cluster(object):
             self.nodes_to_run_command = [node for node in self.nodes
                                          if target == node.get('host_name') or target == node.get('public_ip')]
 
+        self.ssh_client.hosts = [node.get('public_ip') for node in self.nodes_to_run_command]
         output = self.ssh_client.run_command(command)
         for host in output:
             for line in output[host]['stdout']:

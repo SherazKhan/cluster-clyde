@@ -1,9 +1,9 @@
 #!/bin/bash
 
-anaconda=Anaconda2-4.2.0-Linux-x86_64.sh
+anaconda=Miniconda2-latest-Linux-x86_64.sh
 
 if [ ! -f $anaconda ]; then
-    wget https://repo.continuum.io/archive/$anaconda
+    wget https://repo.continuum.io/miniconda/$anaconda
 fi
 
 chmod +x $anaconda
