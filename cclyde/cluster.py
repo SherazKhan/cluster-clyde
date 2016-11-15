@@ -46,6 +46,7 @@ class Cluster(object):
         self.security_group = None
         self.internet_gateway = None
         self.route_table = None
+        self.loaded_paramiko_key = None  # paramiko loaded key
 
 
         # Begin by just connecting to boto3, this alone ensures that user has config and credentials files in ~/.aws/
@@ -146,16 +147,35 @@ class Cluster(object):
         return True
 
 
-    def create_ssh_client(self):
-        """Creates the parallel ssh client"""
-        client_key = utils.load_private_key(self.pem_key_path)
+    @property
+    def ssh_client(self):
+        """Creates the parallel ssh client, recreates it every time it's used because connections remain
+        open if it is only set once; this isn't wanted in our situation."""
+        self.loaded_paramiko_key = utils.load_private_key(self.pem_key_path)
         hosts = [node.public_ip_address for node in self.instances]
-        self.ssh_client = ParallelSSHClient(hosts=hosts, user='ubuntu', pkey=client_key)
+        return ParallelSSHClient(hosts=hosts, user='ubuntu', pkey=self.loaded_paramiko_key)
 
-        
-    def run_cluster_command(self, command, show_output=True, include_master=True):
-        """Runs arbitrary command on all nodes in cluster"""
-        self.ssh_client.run_command(command)
+
+    def run_cluster_command(self, command, target='entire-cluster', show_output=True):
+        """Runs arbitrary command on all nodes in cluster
+        command: str - command to run ie. "ls -l ~/"
+        target: str - one of either 'entire-cluster', 'master', 'cluster-exclude-master', or specific node name
+        """
+        # TODO: Add ability to direct commands to specific nodes, or groups of nodes (ie. all but master)
+        assert target in ['entire-cluster', 'master', 'cluster-exclude-master']
+
+        if target == 'entire-cluster':
+            output = self.ssh_client.run_command(command)
+        elif target == 'master':
+            raise NotImplementedError('Master specific command not implemented')
+        elif target == 'cluster-exclude-master':
+            output = None
+            raise NotImplementedError('All but master command not implemented')
+        else:
+            output = None
+            raise NotImplementedError('Node specific command not implemented')
+
+
 
 
     def check_internet_gateway(self):

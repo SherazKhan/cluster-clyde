@@ -2,7 +2,7 @@
 
 anaconda=Anaconda2-4.2.0-Linux-x86_64.sh
 
-if [[ ! -f $anaconda ]]; then
+if [ ! -f $anaconda ]; then
     wget https://repo.continuum.io/archive/$anaconda
 fi
 
