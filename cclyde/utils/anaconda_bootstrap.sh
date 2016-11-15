@@ -9,5 +9,5 @@ fi
 chmod +x $anaconda
 ./$anaconda -b -f -p /opt/anaconda
 
-export PATH="/opt/anaconda/bin:$PATH"
-echo "export PATH=/opt/anaconda/bin:$PATH" >> ~/.bashrc
+export PATH="/home/ubuntu/anaconda/bin:$PATH"
+echo "export PATH=/home/ubuntu/anaconda/bin:$PATH" >> ~/.bashrc

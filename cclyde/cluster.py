@@ -156,6 +156,22 @@ class Cluster(object):
         return ParallelSSHClient(hosts=hosts, user='ubuntu', pkey=self.loaded_paramiko_key)
 
 
+    def install_anaconda(self):
+        """Installs dask on all cluster nodes"""
+
+        sys.stdout.write('Installing Anaconda on cluster')
+        output = self.ssh_client.run_command(
+            'wget https://raw.githubusercontent.com/milesgranger/cluster-clyde/master/cclyde/utils/anaconda_bootstrap.sh '
+            '&& bash anaconda_bootstrap.sh',
+            sudo=True)
+
+        for host in output:
+            for line in output[host]['stdout']:
+                print("Host %s - output: %s" % (host, line))
+
+        return True
+
+
     def run_cluster_command(self, command, target='entire-cluster', show_output=True):
         """Runs arbitrary command on all nodes in cluster
         command: str - command to run ie. "ls -l ~/"
@@ -169,13 +185,15 @@ class Cluster(object):
         elif target == 'master':
             raise NotImplementedError('Master specific command not implemented')
         elif target == 'cluster-exclude-master':
-            output = None
+            output = []
             raise NotImplementedError('All but master command not implemented')
         else:
-            output = None
+            output = []
             raise NotImplementedError('Node specific command not implemented')
 
-
+        for host in output:
+            for line in output[host]['stdout']:
+                print("Host %s - output: %s" % (host, line))
 
 
     def check_internet_gateway(self):
