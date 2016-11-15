@@ -16,6 +16,7 @@ class Cluster(object):
                  n_nodes=2,
                  ami='ami-40d28157',
                  instance_type='t2.micro',
+                 python_env='defaultenv',
                  volume_size=0):
         """
         Constructor for cluster management object
@@ -47,6 +48,9 @@ class Cluster(object):
         self.internet_gateway = None
         self.route_table = None
         self.loaded_paramiko_key = None  # paramiko loaded key
+        self.python_env = '/home/ubuntu/anaconda/envs/{}/bin '.format(python_env)  # Absolute path to python env
+        self.nodes = []
+        self.nodes_to_run_command = []
 
 
         # Begin by just connecting to boto3, this alone ensures that user has config and credentials files in ~/.aws/
@@ -149,10 +153,14 @@ class Cluster(object):
 
     @property
     def ssh_client(self):
-        """Creates the parallel ssh client, recreates it every time it's used because connections remain
-        open if it is only set once; this isn't wanted in our situation."""
+        """Creates the parallel ssh client, recreates it every time it's used because sometimes the connection hosts
+        will be different"""
         self.loaded_paramiko_key = utils.load_private_key(self.pem_key_path)
-        hosts = [node.public_ip_address for node in self.instances]
+
+        # If nodes_to_run_command list is empty, we can assume we want to run the command on all nodes in the cluster
+        self.nodes_to_run_command = self.nodes_to_run_command if self.nodes_to_run_command else self.nodes
+
+        hosts = [node.get('public_ip') for node in self.nodes_to_run_command]
         return ParallelSSHClient(hosts=hosts, user='ubuntu', pkey=self.loaded_paramiko_key)
 
 
@@ -162,8 +170,7 @@ class Cluster(object):
         sys.stdout.write('Installing Anaconda on cluster')
         output = self.ssh_client.run_command(
             'wget https://raw.githubusercontent.com/milesgranger/cluster-clyde/master/cclyde/utils/anaconda_bootstrap.sh '
-            '&& bash anaconda_bootstrap.sh',
-            sudo=True)
+            '&& bash anaconda_bootstrap.sh')
 
         for host in output:
             for line in output[host]['stdout']:
@@ -172,28 +179,42 @@ class Cluster(object):
         return True
 
 
+    def create_python_env(self, env_name):
+        """Creates a python env"""
+        pass
+
+
     def run_cluster_command(self, command, target='entire-cluster', show_output=True):
         """Runs arbitrary command on all nodes in cluster
         command: str - command to run ie. "ls -l ~/"
         target: str - one of either 'entire-cluster', 'master', 'cluster-exclude-master', or specific node name
         """
-        # TODO: Add ability to direct commands to specific nodes, or groups of nodes (ie. all but master)
-        assert target in ['entire-cluster', 'master', 'cluster-exclude-master']
+
+        # Assert the target is either the whole cluster, master, all but master or one of the specific nodes
+        assert target in ['entire-cluster', 'master', 'cluster-exclude-master'].extend([node.get('host_name')
+                                                                                        for node in self.nodes])
 
         if target == 'entire-cluster':
-            output = self.ssh_client.run_command(command)
-        elif target == 'master':
-            raise NotImplementedError('Master specific command not implemented')
-        elif target == 'cluster-exclude-master':
-            output = []
-            raise NotImplementedError('All but master command not implemented')
-        else:
-            output = []
-            raise NotImplementedError('Node specific command not implemented')
+            self.nodes_to_run_command = self.nodes
 
+        elif target == 'master':
+            self.nodes_to_run_command = [node for node in self.nodes if 'master' in node.get('host_name')]
+            assert len(self.nodes_to_run_command) == 1
+
+        elif target == 'cluster-exclude-master':
+            self.nodes_to_run_command = [node for node in self.nodes if 'master' not in node.get('host_name')]
+            assert len(self.nodes_to_run_command) == len(self.nodes) - 1
+
+        else:
+            self.nodes_to_run_command = [node for node in self.nodes
+                                         if target == node.get('host_name') or target == node.get('public_ip')]
+
+        output = self.ssh_client.run_command(command)
         for host in output:
             for line in output[host]['stdout']:
-                print("Host %s - output: %s" % (host, line))
+                host_name = [node.get('host_name') for node in self.nodes_to_run_command
+                             if node.get('public_ip') == host][0]
+                print("Host %s - IP: %s - output: %s" % (host_name, host, line))
 
 
     def check_internet_gateway(self):
@@ -403,9 +424,15 @@ class Cluster(object):
         sys.stdout.write('\rAll {} instances in running state!\nSetting node names...'.format(self.n_nodes))
         for i, instance in enumerate(instances):
             instance.create_tags(
-                Tags=[{'Key': 'Name', 'Value': 'cclyde_node-{}'.format(i) if i else 'cclyde_master_node'}])
+                Tags=[{'Key': 'Name', 'Value': 'cclyde_node-{}'.format(i) if i else 'cclyde_node-master'}])
             instance.load()
 
+        # Make list of dicts, where each is just the node name and its public ip address
+        self.nodes = [{'host_name': [tag for tag in node.tags if tag.get('Key') == 'Name'][0].get('Value'),
+                       'public_ip': node.public_ip_address
+                       } for node in instances]
+
+        # Assign full AWS EC2 instances to class var if needed later
         self.instances = instances
 
 
