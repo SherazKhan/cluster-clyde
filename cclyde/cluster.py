@@ -155,7 +155,7 @@ class Cluster(object):
         will be different"""
         self.loaded_paramiko_key = utils.load_private_key(self.pem_key_path)
 
-        hosts = [node.get('public_ip') for node in self.nodes]
+        hosts = [node.get('public_ip') for node in self.nodes_to_run_command]
         return ParallelSSHClient(hosts=hosts, user='ubuntu', pkey=self.loaded_paramiko_key)
 
 
@@ -188,8 +188,9 @@ class Cluster(object):
         """
 
         # Assert the target is either the whole cluster, master, all but master or one of the specific nodes
-        assert target in ['entire-cluster', 'master', 'cluster-exclude-master'].extend([node.get('host_name')
-                                                                                        for node in self.nodes])
+        choices = ['entire-cluster', 'master', 'cluster-exclude-master']
+        choices.extend([node.get('host_name') for node in self.nodes])
+        assert target in choices
 
         if target == 'entire-cluster':
             self.nodes_to_run_command = self.nodes
@@ -206,7 +207,8 @@ class Cluster(object):
             self.nodes_to_run_command = [node for node in self.nodes
                                          if target == node.get('host_name') or target == node.get('public_ip')]
 
-        self.ssh_client.hosts = [node.get('public_ip') for node in self.nodes_to_run_command]
+        assert self.nodes_to_run_command > 0
+
         output = self.ssh_client.run_command(command)
         for host in output:
             for line in output[host]['stdout']:
@@ -400,6 +402,7 @@ class Cluster(object):
                                                                   'DeviceIndex': 0}])
 
         # Block until all instances are in 'running' state (code 16)
+        time.sleep(5)
         while True:
             running = 0
 
