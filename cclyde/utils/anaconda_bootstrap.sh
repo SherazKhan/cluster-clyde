@@ -7,7 +7,7 @@ if [ ! -f $anaconda ]; then
 fi
 
 chmod +x $anaconda
-./$anaconda -b -f -p /opt/anaconda
+./$anaconda -b -f -p /home/ubuntu/anaconda
 
 export PATH="/home/ubuntu/anaconda/bin:$PATH"
 echo "export PATH=/home/ubuntu/anaconda/bin:$PATH" >> ~/.bashrc
