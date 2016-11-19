@@ -187,21 +187,33 @@ class Cluster(object):
         return True
 
 
-    def create_python_env(self, env_name):
+    def create_python_env(self, env_name, activate=True):
         """Creates a python env"""
         # TODO: Remember to add env_name to the self.python_env which will also update the path
         pass
 
 
+    def install_python_packages(self, packages):
+        """
+        Convienience function to install python package(s)
+        packages: list - list of packages to install into current python_env environment. ie ['numpy', 'pandas==18.0']
+        For more control over installation of packages to specific nodes use
+        run_cluster_command('pip install <package>', target=<node name>, python_env_cmd=True)
+        """
+        packages = [p.strip() for p in packages]
+        command = 'pip install ' + ' '.join(packages)
+        self.run_cluster_command(command=command, target='entire-cluster', python_env_cmd=True)
+        return True
 
-    def run_cluster_command(self, command, target='entire-cluster'):
-        """Runs arbitrary command on all nodes in cluster
+
+    def run_cluster_command(self, command, target='entire-cluster', python_env_cmd=False):
+        """
+        Runs arbitrary command on all nodes in cluster
         command: str - command to run ie. "ls -l ~/"
         target: str - one of either 'entire-cluster', 'master', 'cluster-exclude-master', or specific node name
         python_env_command: bool - if this is any command to use the environment's bin, the full path to the bin is
-                                   prepended infront of the command. ie /home/ubuntu/anaconda/envs/default/bin/<command>
+                                   prepended infront of the command. ie <command> --> /opt/anaconda/bin/<command>
         """
-
         # Assert the target is either the whole cluster, master, all but master or one of the specific nodes
         choices = ['entire-cluster', 'master', 'cluster-exclude-master']
         choices.extend([node.get('host_name') for node in self.nodes])
@@ -221,9 +233,10 @@ class Cluster(object):
         else:
             self.nodes_to_run_command = [node for node in self.nodes
                                          if target == node.get('host_name') or target == node.get('public_ip')]
+        assert len(self.nodes_to_run_command) > 0
 
-        assert self.nodes_to_run_command > 0
-
+        # prepend python_env_path if this is python command
+        command = self.python_env_path + command if python_env_cmd else command
         output = self.ssh_client.run_command(command, sudo=True)
 
         for host in output:
@@ -434,12 +447,15 @@ class Cluster(object):
             sys.stdout.write('\rLaunching instances: {} out of {} instances running...please wait..'
                              .format(running, len(instances)))
             if all([instance.state.get('Name') == 'running' for instance in instances]):
+
                 break
             else:
                 time.sleep(1.0)
 
         # Now wait for all instance status 'reachability' to be passed before continuing
-        sys.stdout.write('\rWaiting for all instances to be reachable...\n')
+        sys.stdout.write('\rAll instances in running state, waiting for all to be reachable...\n')
+        loops = 0
+        wheel = {0: "<(' '<)", 1: "<(' ')>", 2: "(>' ')>", 3: "<(' ')>"}  # Have fun while we wait, looks like kirby? :)
         while True:
             ready_count = 0
 
@@ -448,10 +464,13 @@ class Cluster(object):
             for status in statuses.get('InstanceStatuses'):
                 ready_count += 1 if status.get('InstanceStatus').get('Status') == 'ok' else 0
 
-            sys.stdout.write('\r{} of {} instances ready for connection...please wait...'.format(ready_count, len(instances)))
+            sys.stdout.write('\r{} of {} instances ready for connection; please wait, this takes a while... {}'
+                             .format(ready_count, len(instances), wheel.get(loops)))
 
-            if ready_count == instances: break
-            else: time.sleep(2)
+            loops += 1
+            loops = loops if loops < 4 else 0
+            if ready_count == len(instances): break
+            else: time.sleep(5)
 
         # Assign tag names to all the nodes
         sys.stdout.write('\rAll {} instances ready!\nSetting node names...'.format(self.n_nodes))
@@ -469,6 +488,13 @@ class Cluster(object):
         self.instances = instances
 
 
+    def stop_cluster(self):
+        """Stops cluster"""
+        raise NotImplementedError('Method not implemented, you must manually shutdown cluster through AWS')
+
+    def terminate_cluster(self):
+        """Terminates instances in cluster"""
+        raise NotImplementedError('Method not implemented, you must manually terminate cluster thought AWS')
 
 
     def __str__(self):
