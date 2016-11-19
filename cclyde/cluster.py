@@ -12,10 +12,11 @@ class Cluster(object):
 
 
     def __init__(self,
-                 key_name='cluster_clyde_default',
+                 key_name='cclyde_default',
                  n_nodes=2,
                  ami='ami-40d28157',
                  instance_type='t2.micro',
+                 python_env='default',
                  volume_size=0):
         """
         Constructor for cluster management object
@@ -49,6 +50,8 @@ class Cluster(object):
         self.loaded_paramiko_key = None  # paramiko loaded key
         self.nodes = []
         self.nodes_to_run_command = []
+        self.python_env = python_env
+        self.python_env_path = None
 
 
         # Begin by just connecting to boto3, this alone ensures that user has config and credentials files in ~/.aws/
@@ -71,7 +74,7 @@ class Cluster(object):
         self.check_key()
         sys.stdout.write('Done.\n')
 
-        sys.stdout.write('Checking for Cluster Clyde\'s Virtual Private Cloud (cluster_clyde_vpc) on AWS...')
+        sys.stdout.write('Checking for Cluster Clyde\'s Virtual Private Cloud (cclyde_vpc) on AWS...')
         self.check_vpc()
         sys.stdout.write('Done.\n')
 
@@ -155,14 +158,28 @@ class Cluster(object):
         will be different"""
         self.loaded_paramiko_key = utils.load_private_key(self.pem_key_path)
 
+        # Set hosts to those which the user specified in 'run_cluster_command' method
         hosts = [node.get('public_ip') for node in self.nodes_to_run_command]
         return ParallelSSHClient(hosts=hosts, user='ubuntu', pkey=self.loaded_paramiko_key)
 
 
+    @property
+    def python_env(self):
+        """@property just to have .setter to modify env path"""
+        # TODO: Add check to see if this environment exists on the cluster; if not, create it.
+        return self.python_env
+
+
+    @python_env.setter
+    def python_env(self, python_env):
+        """If user sets different python_env, need to update the path to that environment"""
+        python_env = python_env.lower().strip()
+        self.python_env_path = '/opt/anaconda/bin/' if python_env == 'default' else '/opt/anaconda/envs/{}/bin/'.format(python_env)
+
+        
     def install_anaconda(self):
         """Installs Anaconda on all cluster nodes"""
-
-        sys.stdout.write('Installing Anaconda on cluster')
+        sys.stdout.write('Installing Anaconda on cluster\n\n')
         output = self.ssh_client.run_command(
             'wget https://raw.githubusercontent.com/milesgranger/cluster-clyde/master/cclyde/utils/anaconda_bootstrap.sh '
             '&& bash anaconda_bootstrap.sh')
@@ -209,12 +226,12 @@ class Cluster(object):
 
         assert self.nodes_to_run_command > 0
 
-        output = self.ssh_client.run_command(command)
+        output = self.ssh_client.run_command(command, sudo=True)
         for host in output:
             for line in output[host]['stdout']:
                 host_name = [node.get('host_name') for node in self.nodes_to_run_command
                              if node.get('public_ip') == host][0]
-                print("Host %s - IP: %s - output: %s" % (host_name, host, line))
+                print("Host: %s \tIP: %s - output: %s" % (host_name, host, line))
 
 
     def check_internet_gateway(self):
