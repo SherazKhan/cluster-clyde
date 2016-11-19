@@ -211,27 +211,27 @@ class Cluster(object):
         return True
 
 
-    def run_cluster_command(self, command, target='entire-cluster', python_env_cmd=False, sudo=False):
+    def run_cluster_command(self, command, target='cluster', python_env_cmd=False, sudo=False):
         """
         Runs arbitrary command on all nodes in cluster
         command: str - command to run ie. "ls -l ~/"
-        target: str - one of either 'entire-cluster', 'master', 'cluster-exclude-master', or specific node name
+        target: str - one of either 'cluster', 'master', 'exclude-master', or specific node name
         python_env_command: bool - if this is any command to use the environment's bin, the full path to the bin is
                                    prepended infront of the command. ie <command> --> /home/ubuntu/anaconda/bin/<command>
         """
         # Assert the target is either the whole cluster, master, all but master or one of the specific nodes
-        choices = ['entire-cluster', 'master', 'cluster-exclude-master']
+        choices = ['cluster', 'master', 'exclude-master']
         choices.extend([node.get('host_name') for node in self.nodes])
         assert target in choices
 
-        if target == 'entire-cluster':
+        if target == 'cluster':
             self.nodes_to_run_command = self.nodes
 
         elif target == 'master':
             self.nodes_to_run_command = [node for node in self.nodes if 'master' in node.get('host_name')]
             assert len(self.nodes_to_run_command) == 1
 
-        elif target == 'cluster-exclude-master':
+        elif target == 'exclude-master':
             self.nodes_to_run_command = [node for node in self.nodes if 'master' not in node.get('host_name')]
             assert len(self.nodes_to_run_command) == len(self.nodes) - 1
 
@@ -242,15 +242,15 @@ class Cluster(object):
 
         # prepend python_env_path if this is python command
         command = self.python_env_path + command if python_env_cmd else command
-        output = self.ssh_client.run_command(command, sudo=sudo)
+        output = self.ssh_client.run_command(command, sudo=sudo, use_shell=False, use_pty=False)
         #self.ssh_client.join(output)
 
         for host in output:
-            for line in output[host]['stdout']:
+            for line in output[host]['exit_code']:
                 if 'sudo' in line: continue  # Always prints 'sudo: unable to resolve host..' when using sudo flag, then real output
                 host_name = [node.get('host_name') for node in self.nodes_to_run_command
                              if node.get('public_ip') == host][0]
-                print("Host: %s \tIP: %s - output: %s" % (host_name, host, line))
+                print("Host: %s \tIP: %s - exit code: %s" % (host_name, host, line))
 
 
     def check_internet_gateway(self):
