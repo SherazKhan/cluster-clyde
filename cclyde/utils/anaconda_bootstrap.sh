@@ -7,12 +7,12 @@ if [ ! -f $anaconda ]; then
 
     echo 'Installing default anaconda environment...'
     chmod +x $anaconda
-    ./$anaconda -b -f -p /opt/anaconda
+    ./$anaconda -b -f -p /home/ubuntu/anaconda
 fi
 
-echo 'Appending /opt/anaconda/bin to path in ~/.bashrc file'
-export PATH="/opt/anaconda/bin:$PATH"
-echo "export PATH=/opt/anaconda/bin:$PATH" >> ~/.bashrc
+echo 'Appending /home/ubuntu/anaconda/bin to path in ~/.bashrc file'
+export PATH="/home/ubuntu/anaconda/bin:$PATH"
+echo "export PATH=/home/ubuntu/anaconda/bin:$PATH" >> ~/.bashrc
 
 echo 'Sourcing .bashrc'
 source ~/.bashrc

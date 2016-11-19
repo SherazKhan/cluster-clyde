@@ -25,8 +25,11 @@ class Cluster(object):
         :param n_nodes: int - Number of nodes to launch
         :param ami: str - Amazon Machine Image code
         :param instance_type: str - The type of EC2 instances to launch.
+        :param python_env: str - name of python environment to use,
+                                 default --> /home/ubuntu/anaconda/bin,
+                                 other --> /home/ubuntu/anaconda/envs/<python_env>/bin
         :param volume_size: int - Size of attached volume to EC2 instance(s) in GB; 0 if no volume attached
-                            if 0 - default instance storage is 8GB but will be lost upon cluster shutdown
+                                  if 0 - default instance storage is 8GB but will be lost upon cluster shutdown
         """
 
         logging.basicConfig()
@@ -153,13 +156,15 @@ class Cluster(object):
 
     @property
     def ssh_client(self):
-        """Creates the parallel ssh client, recreates it every time it's used because sometimes the connection hosts
-        will be different"""
+        """
+        Creates the parallel ssh client, recreates it every time it's used because sometimes the connection hosts
+        will be different
+        """
         self.loaded_paramiko_key = utils.load_private_key(self.pem_key_path)
 
         # Set hosts to those which the user specified in 'run_cluster_command' method
         hosts = [node.get('public_ip') for node in self.nodes_to_run_command]
-        return ParallelSSHClient(hosts=hosts, user='ubuntu', pkey=self.loaded_paramiko_key)
+        return ParallelSSHClient(hosts=hosts, user='ubuntu', pkey=self.loaded_paramiko_key, channel_timeout=30)
 
 
     @property
@@ -175,7 +180,7 @@ class Cluster(object):
         python_env = python_env.lower().strip()
 
         self._python_env = python_env  # Set temp _python_env which @property will use
-        self.python_env_path = '/opt/anaconda/bin/' if python_env == 'default' else '/opt/anaconda/envs/{}/bin/'.format(python_env)
+        self.python_env_path = '/home/ubuntu/anaconda/bin/' if python_env == 'default' else '/hoome/ubuntu/anaconda/envs/{}/bin/'.format(python_env)
 
 
     def install_anaconda(self):
@@ -206,13 +211,13 @@ class Cluster(object):
         return True
 
 
-    def run_cluster_command(self, command, target='entire-cluster', python_env_cmd=False):
+    def run_cluster_command(self, command, target='entire-cluster', python_env_cmd=False, sudo=False):
         """
         Runs arbitrary command on all nodes in cluster
         command: str - command to run ie. "ls -l ~/"
         target: str - one of either 'entire-cluster', 'master', 'cluster-exclude-master', or specific node name
         python_env_command: bool - if this is any command to use the environment's bin, the full path to the bin is
-                                   prepended infront of the command. ie <command> --> /opt/anaconda/bin/<command>
+                                   prepended infront of the command. ie <command> --> /home/ubuntu/anaconda/bin/<command>
         """
         # Assert the target is either the whole cluster, master, all but master or one of the specific nodes
         choices = ['entire-cluster', 'master', 'cluster-exclude-master']
@@ -237,7 +242,8 @@ class Cluster(object):
 
         # prepend python_env_path if this is python command
         command = self.python_env_path + command if python_env_cmd else command
-        output = self.ssh_client.run_command(command, sudo=True)
+        output = self.ssh_client.run_command(command, sudo=sudo)
+        #self.ssh_client.join(output)
 
         for host in output:
             for line in output[host]['stdout']:
