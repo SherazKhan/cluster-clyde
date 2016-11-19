@@ -50,8 +50,7 @@ class Cluster(object):
         self.loaded_paramiko_key = None  # paramiko loaded key
         self.nodes = []
         self.nodes_to_run_command = []
-        self.python_env = python_env
-        self.python_env_path = None
+        self.python_env = python_env.lower().strip()
 
 
         # Begin by just connecting to boto3, this alone ensures that user has config and credentials files in ~/.aws/
@@ -165,35 +164,34 @@ class Cluster(object):
 
     @property
     def python_env(self):
-        """@property just to have .setter to modify env path"""
-        # TODO: Add check to see if this environment exists on the cluster; if not, create it.
-        return self.python_env
+        """@property just to have .setter to modify env path when python_env is changed"""
+        return self._python_env
 
 
     @python_env.setter
     def python_env(self, python_env):
-        """If user sets different python_env, need to update the path to that environment"""
+        """If user sets different python_env, need to update the path to that environment as well"""
+        # TODO: Add check to see if this environment exists on the cluster; if not, create it.
         python_env = python_env.lower().strip()
+
+        self._python_env = python_env  # Set temp _python_env which @property will use
         self.python_env_path = '/opt/anaconda/bin/' if python_env == 'default' else '/opt/anaconda/envs/{}/bin/'.format(python_env)
 
-        
+
     def install_anaconda(self):
         """Installs Anaconda on all cluster nodes"""
-        sys.stdout.write('Installing Anaconda on cluster\n\n')
-        output = self.ssh_client.run_command(
-            'wget https://raw.githubusercontent.com/milesgranger/cluster-clyde/master/cclyde/utils/anaconda_bootstrap.sh '
-            '&& bash anaconda_bootstrap.sh')
-
-        for host in output:
-            for line in output[host]['stdout']:
-                print("Host %s - output: %s" % (host, line))
-
+        sys.stdout.write('Installing Anaconda on cluster...\n\n')
+        command = 'wget https://raw.githubusercontent.com/milesgranger/cluster-clyde/master/cclyde/utils/anaconda_bootstrap.sh ' \
+                  '&& bash anaconda_bootstrap.sh'
+        self.run_cluster_command(command, target='entire-cluster')
         return True
 
 
     def create_python_env(self, env_name):
         """Creates a python env"""
+        # TODO: Remember to add env_name to the self.python_env which will also update the path
         pass
+
 
 
     def run_cluster_command(self, command, target='entire-cluster'):
@@ -227,8 +225,10 @@ class Cluster(object):
         assert self.nodes_to_run_command > 0
 
         output = self.ssh_client.run_command(command, sudo=True)
+
         for host in output:
             for line in output[host]['stdout']:
+                if 'sudo' in line: continue  # Always prints 'sudo: unable to resolve host..' when using sudo flag, then real output
                 host_name = [node.get('host_name') for node in self.nodes_to_run_command
                              if node.get('public_ip') == host][0]
                 print("Host: %s \tIP: %s - output: %s" % (host_name, host, line))
@@ -438,8 +438,23 @@ class Cluster(object):
             else:
                 time.sleep(1.0)
 
+        # Now wait for all instance status 'reachability' to be passed before continuing
+        sys.stdout.write('\rWaiting for all instances to be reachable...\n')
+        while True:
+            ready_count = 0
+
+            # Request instance updates
+            statuses = self.client.describe_instance_status(InstanceIds=[node.id for node in instances])
+            for status in statuses.get('InstanceStatuses'):
+                ready_count += 1 if status.get('InstanceStatus').get('Status') == 'ok' else 0
+
+            sys.stdout.write('\r{} of {} instances ready for connection...please wait...'.format(ready_count, len(instances)))
+
+            if ready_count == instances: break
+            else: time.sleep(2)
+
         # Assign tag names to all the nodes
-        sys.stdout.write('\rAll {} instances in running state!\nSetting node names...'.format(self.n_nodes))
+        sys.stdout.write('\rAll {} instances ready!\nSetting node names...'.format(self.n_nodes))
         for i, instance in enumerate(instances):
             instance.create_tags(
                 Tags=[{'Key': 'Name', 'Value': 'cclyde_node-{}'.format(i) if i else 'cclyde_node-master'}])
@@ -452,6 +467,8 @@ class Cluster(object):
 
         # Assign full AWS EC2 instances to class var if needed later
         self.instances = instances
+
+
 
 
     def __str__(self):
