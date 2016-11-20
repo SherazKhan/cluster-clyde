@@ -4,12 +4,13 @@ import time
 import os
 import logging
 
-from pssh import ParallelSSHClient, utils
+from paramiko.client import SSHClient
+from paramiko import AutoAddPolicy
+from concurrent.futures import ThreadPoolExecutor
 from utils import get_ip, get_dask_permissions
 
 
 class Cluster(object):
-
 
     def __init__(self,
                  key_name='cclyde_default',
@@ -50,28 +51,29 @@ class Cluster(object):
         self.security_group = None
         self.internet_gateway = None
         self.route_table = None
-        self.loaded_paramiko_key = None  # paramiko loaded key
         self.nodes = []
         self.nodes_to_run_command = []
         self.python_env = python_env.lower().strip()
+        self.configured = False
+        self.anaconda_installed = False
+
+
+        # Object SSH #
+        self.ssh_client = SSHClient()
+        self.ssh_client.set_missing_host_key_policy(AutoAddPolicy())
 
 
         # Begin by just connecting to boto3, this alone ensures that user has config and credentials files in ~/.aws/
         sys.stdout.write('Connecting to Boto3 and EC2 resources...')
         self.ec2 = boto3.resource('ec2')
         self.client = boto3.client('ec2')
-        sys.stdout.write('Done. Ready to start cluster! Run: >>> cluster.start_cluster()\n')
+        sys.stdout.write('Done. \nReady to configure in preparation to launch cluster! Run: >>> cluster.configure()\n')
 
 
-    def start_cluster(self):
+    def configure(self):
         """
-        Performs all aspects of launching the cluster; checks keypairs, VPC, subnet, security group config, etc.
-        :return:
+        Runs all configuration methods, before start_cluster() method.
         """
-
-        self.logger.warning('\tOnce instances are running, you may be accumulating charges from AWS; be sure to run '
-                            'cluster.stop_cluster() *AND* confirm instances are stopped/terminated via AWS console!')
-
         sys.stdout.write('Checking keypair exists using key_name: "{}"...'.format(self.key_name))
         self.check_key()
         sys.stdout.write('Done.\n')
@@ -104,9 +106,9 @@ class Cluster(object):
         self.check_vpc_route_table()
         sys.stdout.write('Done.\n')
 
-        sys.stdout.write('Launching instances...')
-        self.launch_instances()
-        sys.stdout.write('Done.\n')
+        self.configured = True
+
+        sys.stdout.write('Everything is configured, you can now run >>> cluster.launch_instances()')
 
 
     @staticmethod
@@ -155,19 +157,6 @@ class Cluster(object):
 
 
     @property
-    def ssh_client(self):
-        """
-        Creates the parallel ssh client, recreates it every time it's used because sometimes the connection hosts
-        will be different
-        """
-        self.loaded_paramiko_key = utils.load_private_key(self.pem_key_path)
-
-        # Set hosts to those which the user specified in 'run_cluster_command' method
-        hosts = [node.get('public_ip') for node in self.nodes_to_run_command]
-        return ParallelSSHClient(hosts=hosts, user='ubuntu', pkey=self.loaded_paramiko_key, channel_timeout=30)
-
-
-    @property
     def python_env(self):
         """@property just to have .setter to modify env path when python_env is changed"""
         return self._python_env
@@ -180,7 +169,7 @@ class Cluster(object):
         python_env = python_env.lower().strip()
 
         self._python_env = python_env  # Set temp _python_env which @property will use
-        self.python_env_path = '/home/ubuntu/anaconda/bin/' if python_env == 'default' else '/hoome/ubuntu/anaconda/envs/{}/bin/'.format(python_env)
+        self.python_env_path = '/home/ubuntu/anaconda/bin/' if python_env == 'default' else '/home/ubuntu/anaconda/envs/{}/bin/'.format(python_env)
 
 
     def install_anaconda(self):
@@ -188,8 +177,9 @@ class Cluster(object):
         sys.stdout.write('Installing Anaconda on cluster...\n\n')
         command = 'wget https://raw.githubusercontent.com/milesgranger/cluster-clyde/master/cclyde/utils/anaconda_bootstrap.sh ' \
                   '&& bash anaconda_bootstrap.sh'
-        self.run_cluster_command(command, target='entire-cluster')
-        return True
+        results = self.run_cluster_command(command, target='cluster', ignore_output=False)
+        self.anaconda_installed = True
+        return results
 
 
     def create_python_env(self, env_name, activate=True):
@@ -198,7 +188,7 @@ class Cluster(object):
         pass
 
 
-    def install_python_packages(self, packages):
+    def install_python_packages(self, packages, method='pip', target='cluster', only_exit_codes=True):
         """
         Convienience function to install python package(s)
         packages: list - list of packages to install into current python_env environment. ie ['numpy', 'pandas==18.0']
@@ -206,24 +196,107 @@ class Cluster(object):
         run_cluster_command('pip install <package>', target=<node name>, python_env_cmd=True)
         """
         packages = [p.strip() for p in packages]
-        command = 'pip install ' + ' '.join(packages)
-        self.run_cluster_command(command=command, target='entire-cluster', python_env_cmd=True)
+
+        # Install all packages one by one to help avoid errors incase just one package errors out.
+        for package in packages:
+            sys.stdout.write('\nInstalling package: {}'.format(package))
+            if method == 'pip':
+                command = 'pip install {}'.format(package)
+            else:
+                command = 'conda install {} -y'.format(package)
+
+            # Run the command to install this package, then iterate over all host results
+            results = self.run_cluster_command(command=command, target=target, python_env_cmd=True)
+            for result in results:
+                if only_exit_codes:
+                    to_print = '\n----------\n{} \tExit code: {}\n'.format(result.get('host_name'),
+                                                                           result.get('exit_code'))
+                else:
+                    to_print = '\n----------\n{} stdout: {}\nstderr: {}\nExit code: {}\n'.format(result.get('host_name'),
+                                                                                                 result.get('stdout'),
+                                                                                                 result.get('stderr'),
+                                                                                                 result.get('exit_code'))
+                sys.stdout.write(to_print)
+
         return True
 
 
-    def run_cluster_command(self, command, target='cluster', python_env_cmd=False, sudo=False):
+    def launch_dask(self):
+        """On a running cluster with anaconda installs and launches dask distributed in the current python_env"""
+
+        # Ensure anaconda has been installed on cluster
+        if not self.anaconda_installed:
+            raise AssertionError('Need to have anaconda installed on cluster; run >>>cluster.install_anaconda()')
+
+        # Locate mater, to use its internal ip address for worker nodes to connect to
+        master = filter(lambda node: node.get('host_name', '').endswith('master'), self.nodes)
+        if master:
+            master = master[0]
+        else:
+            raise Warning('Master node not found in self.nodes')
+
+
+        # Ensure distributed is installed on the cluster.
+        sys.stdout.write('Installing dask.distributed on cluster\n')
+        output = self.run_cluster_command('{}conda install distributed -y'.format(self.python_env_path),
+                                          target='cluster',
+                                          ignore_output=False)
+        for r in output:
+            sys.stdout.write('\nNode: {} exit code: {}'.format(r.get('host_name'), r.get('exit_code')))
+            if r.get('exit_code'):
+                sys.stderr.write('\nStdout: {}\nStderr: {}\n'.format(r.get('stdout'), r.get('stderr')))
+        time.sleep(10)
+
+        # Launch the scheduler on the master node
+        sys.stdout.write('\nLaunching scheduler on master node...')
+        output = self.run_cluster_command('nohup {}dask-scheduler &'.format(self.python_env_path),
+                                          target='master',
+                                          python_env_cmd=False,
+                                          ignore_output=True)
+        time.sleep(5)
+        sys.stdout.write('Done.\n')
+
+
+        # Launch the workers
+        sys.stdout.write('\nLaunching workers...')
+        # TODO: Add ability for --nprocs & --nthreads; now it defaults to one process with threads == n_cores
+        output = self.run_cluster_command('nohup {}dask-worker {}:8786 &'.format(self.python_env_path,
+                                                                                 master.get('internal_ip')),
+                                          target='exclude-master',
+                                          python_env_cmd=False,
+                                          ignore_output=True)
+
+        time.sleep(5)
+        sys.stdout.write('Done.\n')
+
+        sys.stdout.write('\nScheduler should be available here: {}:8786'.format(master.get('public_ip')))
+
+
+
+
+    def run_cluster_command(self, command, target='cluster', python_env_cmd=False, ignore_output=False):
         """
         Runs arbitrary command on all nodes in cluster
+
         command: str - command to run ie. "ls -l ~/"
+
         target: str - one of either 'cluster', 'master', 'exclude-master', or specific node name
+
         python_env_command: bool - if this is any command to use the environment's bin, the full path to the bin is
                                    prepended infront of the command. ie <command> --> /home/ubuntu/anaconda/bin/<command>
+                                   IMPORTANT: if your python command includes something like: 'nohup <my_command>'
+                                   you should not set this because it would end up like: /home/ubuntu/anaconda/bin/nohup <my_command>
+
+        returns list of dicts generator with informaiton about node and given output form the command (if not ignore_output)
         """
         # Assert the target is either the whole cluster, master, all but master or one of the specific nodes
         choices = ['cluster', 'master', 'exclude-master']
         choices.extend([node.get('host_name') for node in self.nodes])
+        choices.extend([node.get('public_ip') for node in self.nodes])
+        choices.extend([node.get('internal_ip') for node in self.nodes])
         assert target in choices
 
+        # Determine what nodes to run this command on
         if target == 'cluster':
             self.nodes_to_run_command = self.nodes
 
@@ -238,19 +311,63 @@ class Cluster(object):
         else:
             self.nodes_to_run_command = [node for node in self.nodes
                                          if target == node.get('host_name') or target == node.get('public_ip')]
+
+        # Sanity check; make sure we're gonig to run on at least one node.
         assert len(self.nodes_to_run_command) > 0
 
         # prepend python_env_path if this is python command
         command = self.python_env_path + command if python_env_cmd else command
-        output = self.ssh_client.run_command(command, sudo=sudo, use_shell=False, use_pty=False)
-        #self.ssh_client.join(output)
 
-        for host in output:
-            for line in output[host]['exit_code']:
-                if 'sudo' in line: continue  # Always prints 'sudo: unable to resolve host..' when using sudo flag, then real output
-                host_name = [node.get('host_name') for node in self.nodes_to_run_command
-                             if node.get('public_ip') == host][0]
-                print("Host: %s \tIP: %s - exit code: %s" % (host_name, host, line))
+        def run_command_on_node(node):
+            """Runs a command on given node; processed by threads"""
+
+            result = dict(host_name=node.get('host_name'),
+                          public_ip=node.get('public_ip'),
+                          exit_code=None,
+                          stdout='',
+                          stderr='')
+
+            client = SSHClient()
+            client.set_missing_host_key_policy(AutoAddPolicy())
+            client.connect(hostname=node.get('public_ip'),
+                           username='ubuntu',
+                           key_filename=self.pem_key_path,
+                           timeout=60,
+                           banner_timeout=60)
+            channel = client.get_transport().open_session()
+            stdout = channel.makefile()
+            stderr = channel.makefile_stderr()
+            channel.exec_command(command=command)
+
+            # If user doesn't care about exit code, don't bother looking for output/exit code
+            if not ignore_output:
+                while True:
+
+                    # If user deosn't want output, just look for the exit code.
+                    if stdout.readable():
+                        result['stdout'] += stdout.readline(size=2048)
+                    if stderr.readable():
+                        result['stderr'] += stderr.readline(size=2048)
+
+                    if channel.exit_status_ready():
+                        result['exit_code'] = channel.exit_status
+                        break
+                    else:
+                        time.sleep(0.5)
+
+            # Close files and client connection
+            stderr.close()
+            stdout.close()
+            client.close()
+            return result
+
+        # Map nodes_to_run_command to function above
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            results = executor.map(run_command_on_node, self.nodes_to_run_command)
+
+        return results
+
+
 
 
     def check_internet_gateway(self):
@@ -426,7 +543,15 @@ class Cluster(object):
 
 
     def launch_instances(self):
-        '''Launches EC2 instances'''
+        """Launches EC2 instances, must run configure() method beforehand"""
+
+        if not self.configured:
+            raise AttributeError('Cluster is not yet configured, please run >>> cluster.configure() before attempting '
+                                 'to launch instances.')
+
+        self.logger.warning('\tOnce instances are running, you may be accumulating charges from AWS; be sure to run '
+                            'cluster.stop_cluster() *AND* confirm instances are stopped/terminated via AWS console!')
+
         instances = self.ec2.create_instances(ImageId=self.ami,
                                               InstanceType=self.instance_type,
                                               MinCount=self.n_nodes,
@@ -484,10 +609,12 @@ class Cluster(object):
             instance.create_tags(
                 Tags=[{'Key': 'Name', 'Value': 'cclyde_node-{}'.format(i) if i else 'cclyde_node-master'}])
             instance.load()
+        sys.stdout.write('Done.\n')
 
         # Make list of dicts, where each is just the node name and its public ip address
         self.nodes = [{'host_name': [tag for tag in node.tags if tag.get('Key') == 'Name'][0].get('Value'),
-                       'public_ip': node.public_ip_address
+                       'public_ip': node.public_ip_address,
+                       'internal_ip': node.private_ip_address
                        } for node in instances]
 
         # Assign full AWS EC2 instances to class var if needed later
@@ -496,11 +623,16 @@ class Cluster(object):
 
     def stop_cluster(self):
         """Stops cluster"""
-        raise NotImplementedError('Method not implemented, you must manually shutdown cluster through AWS')
+        for instance in self.instances:
+            instance.stop(Force=True)
+        self.logger.warning('Stopped instances. Please check your AWS console to ensure nodes are stopped!')
+
 
     def terminate_cluster(self):
         """Terminates instances in cluster"""
-        raise NotImplementedError('Method not implemented, you must manually terminate cluster thought AWS')
+        for instance in self.instances:
+            instance.terminate()
+        self.logger.warning('Terminated instances. Please check your AWS console to ensure termination of nodes!')
 
 
     def __str__(self):

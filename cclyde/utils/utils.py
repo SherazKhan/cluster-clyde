@@ -36,9 +36,6 @@ def get_dask_permissions(obj, ip):
         {'IpProtocol': 'tcp',
          'FromPort': 80,
          'ToPort': 8786,
-         'UserIdGroupPairs': [{'VpcId': obj.vpc.id,
-                               'GroupId': obj.security_group.group_id, },
-                              ],
          'IpRanges': [{'CidrIp': ip},
                       ],
          },
@@ -47,11 +44,19 @@ def get_dask_permissions(obj, ip):
         {'IpProtocol': 'tcp',
          'FromPort': 80,
          'ToPort': 8787,
-         'UserIdGroupPairs': [{'VpcId': obj.vpc.id,
-                               'GroupId': obj.security_group.group_id, },
-                              ],
          'IpRanges': [{'CidrIp': ip},
                       ],
          },
+
+        # Allow connection to port 8787 for client and all nodes
+        {'IpProtocol': 'tcp',
+         'FromPort': 0,
+         'ToPort': 65535,
+         'UserIdGroupPairs': [{'VpcId': obj.vpc.id,
+                               'GroupId': obj.security_group.group_id, },
+                              ],
+         },
+
+
     ]
     return dask_permissions
