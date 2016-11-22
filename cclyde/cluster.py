@@ -14,6 +14,7 @@ class Cluster(object):
 
     def __init__(self,
                  key_name='cclyde_default',
+                 cluster_name='default',
                  n_nodes=2,
                  ami='ami-40d28157',
                  instance_type='t2.micro',
@@ -24,6 +25,8 @@ class Cluster(object):
         :param key_name: str - string of existing key name, if it doesn't exist it will be created.
                               this only refers to the name as: '<pem_key>.pem'
         :param n_nodes: int - Number of nodes to launch
+        :param cluster_name: str - name of this new cluster, this is given as a tag to created instances to allow
+                                   reconnection/starting of instances.
         :param ami: str - Amazon Machine Image code
         :param instance_type: str - The type of EC2 instances to launch.
         :param python_env: str - name of python environment to use,
@@ -51,11 +54,11 @@ class Cluster(object):
         self.security_group = None
         self.internet_gateway = None
         self.route_table = None
-        self.nodes = []
         self.nodes_to_run_command = []
         self.python_env = python_env.lower().strip()
         self.configured = False
         self.anaconda_installed = False
+        self.cluster_name = cluster_name
 
 
         # Object SSH #
@@ -157,6 +160,16 @@ class Cluster(object):
 
 
     @property
+    def nodes(self):
+        # Make list of dicts, where each is just the node name and its public and internal ip addresses
+        nodes = [{'host_name': [tag for tag in node.tags if tag.get('Key') == 'Name'][0].get('Value'),
+                  'public_ip': node.public_ip_address,
+                  'internal_ip': node.private_ip_address
+                  } for node in self.instances]
+        return nodes
+
+
+    @property
     def python_env(self):
         """@property just to have .setter to modify env path when python_env is changed"""
         return self._python_env
@@ -179,6 +192,7 @@ class Cluster(object):
                   '&& bash anaconda_bootstrap.sh'
         results = self.run_cluster_command(command, target='cluster', ignore_output=False)
         self.anaconda_installed = True
+        sys.stdout.write('Done.')
         return results
 
 
@@ -269,7 +283,8 @@ class Cluster(object):
         time.sleep(5)
         sys.stdout.write('Done.\n')
 
-        sys.stdout.write('\nScheduler should be available here: {}:8786'.format(master.get('public_ip')))
+        sys.stdout.write('\nScheduler should be available here: {0}:8786'
+                         '\nWeb Dashboard should be available here: {0}:8787'.format(master.get('public_ip')))
 
 
 
@@ -302,7 +317,7 @@ class Cluster(object):
 
         elif target == 'master':
             self.nodes_to_run_command = [node for node in self.nodes if 'master' in node.get('host_name')]
-            assert len(self.nodes_to_run_command) == 1
+            assert len(self.nodes_to_run_command) == 1, 'Found more than one master: {}'.format(self.nodes_to_run_command)
 
         elif target == 'exclude-master':
             self.nodes_to_run_command = [node for node in self.nodes if 'master' not in node.get('host_name')]
@@ -313,7 +328,7 @@ class Cluster(object):
                                          if target == node.get('host_name') or target == node.get('public_ip')]
 
         # Sanity check; make sure we're gonig to run on at least one node.
-        assert len(self.nodes_to_run_command) > 0
+        assert len(self.nodes_to_run_command) > 0, 'Based on target: {}, no nodes to run command on'.format(target)
 
         # prepend python_env_path if this is python command
         command = self.python_env_path + command if python_env_cmd else command
@@ -562,25 +577,62 @@ class Cluster(object):
                                                                   'Groups': [self.security_group.id, ],
                                                                   'DeviceIndex': 0}])
 
-        # Block until all instances are in 'running' state (code 16)
+        # Block until all instances are in 'running' state (code 16) & ready for connection
         self.wait_for_instances(instances)
 
         # Assign tag names to all the nodes
         sys.stdout.write('\rAll {} instances ready!\nSetting node names...'.format(self.n_nodes))
         for i, instance in enumerate(instances):
             instance.create_tags(
-                Tags=[{'Key': 'Name', 'Value': 'cclyde_node-{}'.format(i) if i else 'cclyde_node-master'}])
+                Tags=[{'Key': 'cluster_association', 'Value': self.cluster_name},
+                      {'Key': 'Name', 'Value': 'cclyde_node-{}'.format(i) if i else 'cclyde_node-master'}
+                      ])
             instance.load()
         sys.stdout.write('Done.\n')
 
-        # Make list of dicts, where each is just the node name and its public ip address
-        self.nodes = [{'host_name': [tag for tag in node.tags if tag.get('Key') == 'Name'][0].get('Value'),
-                       'public_ip': node.public_ip_address,
-                       'internal_ip': node.private_ip_address
-                       } for node in instances]
-
         # Assign full AWS EC2 instances to class var if needed later
         self.instances = instances
+
+        # install anaconda
+        self.install_anaconda()
+
+        return
+
+
+    def reconnect_to_cluster(self):
+        """
+        Instead of running launch_instances(), run this to reconnect to a cluster; it is expected that there
+        are instances on the cclyde_vpc who's Tag 'cluster_association' matches the given current self.cluster_name
+        will raise an exception if none are found on VPC.
+        :return:
+        """
+
+        if not self.configured:
+            raise AttributeError('Cluster is not yet configured, please run >>> cluster.configure() before attempting '
+                                 'to connect to instances.')
+
+        # Get instances with the current obj cluster_name
+        instances = [inst for inst in self.vpc.instances.filter(Filters=([{'Name': 'tag:cluster_association',
+                                                                           'Values': [self.cluster_name, ]}]))]
+
+        if not instances:
+            raise ValueError('No instances found on VPC with the cluster_association to cluster_name: {}'
+                             .format(self.cluster_name))
+
+        # Check if these instances are already running.
+        if all([i.state.get('Name') == 'running' for i in instances]):
+            sys.stdout.write('\nConnected to exiting running instances. Count: {}, cluster_name: {}\n'
+                             .format(len(instances), self.cluster_name))
+
+        else:
+            sys.stdout.write('\nFound non-running instances.. starting them...\n')
+            self.client.start_instances(InstanceIds=[inst.id for inst in instances])
+            self.wait_for_instances(instances)
+
+        self.instances = instances
+
+        return
+
 
 
     def wait_for_instances(self, instances):
@@ -589,9 +641,7 @@ class Cluster(object):
         :param instances: <list> - iterable of Boto3 Instance objects.
         :return: None - Blocks until all are running and ready for be connected to.
         """
-
         # First loop until all instances are running
-        time.sleep(5)
         while True:
             running = 0
 
@@ -631,7 +681,7 @@ class Cluster(object):
             if ready_count == len(instances):
                 break
             else:
-                time.sleep(5)
+                time.sleep(3)
 
 
     def stop_cluster(self):
