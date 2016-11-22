@@ -563,6 +563,34 @@ class Cluster(object):
                                                                   'DeviceIndex': 0}])
 
         # Block until all instances are in 'running' state (code 16)
+        self.wait_for_instances(instances)
+
+        # Assign tag names to all the nodes
+        sys.stdout.write('\rAll {} instances ready!\nSetting node names...'.format(self.n_nodes))
+        for i, instance in enumerate(instances):
+            instance.create_tags(
+                Tags=[{'Key': 'Name', 'Value': 'cclyde_node-{}'.format(i) if i else 'cclyde_node-master'}])
+            instance.load()
+        sys.stdout.write('Done.\n')
+
+        # Make list of dicts, where each is just the node name and its public ip address
+        self.nodes = [{'host_name': [tag for tag in node.tags if tag.get('Key') == 'Name'][0].get('Value'),
+                       'public_ip': node.public_ip_address,
+                       'internal_ip': node.private_ip_address
+                       } for node in instances]
+
+        # Assign full AWS EC2 instances to class var if needed later
+        self.instances = instances
+
+
+    def wait_for_instances(self, instances):
+        """
+        Wait for instances to be in reachable state; checks for running and then to be reachable
+        :param instances: <list> - iterable of Boto3 Instance objects.
+        :return: None - Blocks until all are running and ready for be connected to.
+        """
+
+        # First loop until all instances are running
         time.sleep(5)
         while True:
             running = 0
@@ -575,7 +603,7 @@ class Cluster(object):
                     running += 1
 
             # Write status and break if all running, otherwise sleep for a sec before checking status again
-            sys.stdout.write('\rLaunching instances: {} out of {} instances running...please wait..'
+            sys.stdout.write('\rInstances starting: {} out of {} instances running...please wait..'
                              .format(running, len(instances)))
             if all([instance.state.get('Name') == 'running' for instance in instances]):
 
@@ -600,25 +628,10 @@ class Cluster(object):
 
             loops += 1
             loops = loops if loops < 4 else 0
-            if ready_count == len(instances): break
-            else: time.sleep(5)
-
-        # Assign tag names to all the nodes
-        sys.stdout.write('\rAll {} instances ready!\nSetting node names...'.format(self.n_nodes))
-        for i, instance in enumerate(instances):
-            instance.create_tags(
-                Tags=[{'Key': 'Name', 'Value': 'cclyde_node-{}'.format(i) if i else 'cclyde_node-master'}])
-            instance.load()
-        sys.stdout.write('Done.\n')
-
-        # Make list of dicts, where each is just the node name and its public ip address
-        self.nodes = [{'host_name': [tag for tag in node.tags if tag.get('Key') == 'Name'][0].get('Value'),
-                       'public_ip': node.public_ip_address,
-                       'internal_ip': node.private_ip_address
-                       } for node in instances]
-
-        # Assign full AWS EC2 instances to class var if needed later
-        self.instances = instances
+            if ready_count == len(instances):
+                break
+            else:
+                time.sleep(5)
 
 
     def stop_cluster(self):
