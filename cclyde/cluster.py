@@ -24,9 +24,9 @@ class Cluster(object):
         Constructor for cluster management object
         :param key_name: str - string of existing key name, if it doesn't exist it will be created.
                               this only refers to the name as: '<pem_key>.pem'
-        :param n_nodes: int - Number of nodes to launch
         :param cluster_name: str - name of this new cluster, this is given as a tag to created instances to allow
-                                   reconnection/starting of instances.
+               reconnection/starting of instances.
+        :param n_nodes: int - Number of nodes to launch
         :param ami: str - Amazon Machine Image code
         :param instance_type: str - The type of EC2 instances to launch.
         :param python_env: str - name of python environment to use,
@@ -111,7 +111,8 @@ class Cluster(object):
 
         self.configured = True
 
-        sys.stdout.write('Everything is configured, you can now run >>> cluster.launch_instances()')
+        sys.stdout.write('Everything is configured, you can now run >>> cluster.launch_instances() '
+                         'OR cluster.reconnect_to_cluster()')
 
 
     @staticmethod
@@ -182,7 +183,8 @@ class Cluster(object):
         python_env = python_env.lower().strip()
 
         self._python_env = python_env  # Set temp _python_env which @property will use
-        self.python_env_path = '/home/ubuntu/anaconda/bin/' if python_env == 'default' else '/home/ubuntu/anaconda/envs/{}/bin/'.format(python_env)
+        self.python_env_path = '/home/ubuntu/anaconda/bin/' \
+                               if python_env == 'default' else '/home/ubuntu/anaconda/envs/{}/bin/'.format(python_env)
 
 
     def install_anaconda(self):
