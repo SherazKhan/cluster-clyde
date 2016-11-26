@@ -628,6 +628,7 @@ class Cluster(object):
             sys.stdout.write('\nFound non-running instances.. starting them...\n')
             self.client.start_instances(InstanceIds=[inst.id for inst in instances])
             self.wait_for_instances(instances)
+            sys.stdout.write('\rDone.\n')
 
         self.instances = instances
 
