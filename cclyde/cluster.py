@@ -3,6 +3,7 @@ import sys
 import time
 import os
 import logging
+import threading
 
 from paramiko.client import SSHClient
 from paramiko import AutoAddPolicy
@@ -559,6 +560,17 @@ class Cluster(object):
                     raise Exception(exc)
 
 
+
+    def launch_instances_nonblocking(self):
+        """
+        Launches EC2 instances, but doesn't block main thread
+        Check that instances are running with self.instance_launching_thread.is_alive() --> False = instances are ready.
+        """
+        self.instance_launching_thread = threading.Thread(target=self.launch_instances, )
+        self.instance_launching_thread.start()
+
+
+
     def launch_instances(self):
         """Launches EC2 instances, must run configure() method beforehand"""
 
@@ -597,7 +609,6 @@ class Cluster(object):
 
         # install anaconda
         self.install_anaconda()
-
         return
 
 
