@@ -13,7 +13,7 @@ def __init__(self,
               ami='ami-40d28157',
               instance_type='t2.micro',
               python_env='default')
-`
+`<br/>
 
 Constructor for cluster management object
 :param key_name: str - string of existing key name, if it doesn't exist it will be created.
@@ -31,7 +31,7 @@ Constructor for cluster management object
 
 `
 def configure()
-`
+`<br/>
 Runs all configuration methods, before start_cluster() method.
 
 
@@ -39,7 +39,7 @@ Runs all configuration methods, before start_cluster() method.
 
 `
 def make_credentials_file(aws_access_key_id, aws_secret_access_key)
-`
+`<br/>
 *static method*
 Creates a credential file for user
 be careful, this overwrites any existing credential file
@@ -50,7 +50,7 @@ be careful, this overwrites any existing credential file
 
 `
 def make_config_file(region)
-`
+`<br/>
 Creates a config file for user
 be careful, this overwrites any existing config file
 @param region: str - AWS region ie. us-east-1
@@ -59,7 +59,7 @@ be careful, this overwrites any existing config file
 
 `
 def install_python_packages(packages, method='pip', target='cluster', only_exit_codes=True)
-`
+`<br/>
 
 Convienience function to install python package(s)
 packages: list - list of packages to install into current python_env environment. ie ['numpy', 'pandas==18.0']
@@ -70,7 +70,7 @@ run_cluster_command('pip install <package>', target=<node name>, python_env_cmd=
 
 `
 def launch_dask()
-`
+`<br/>
 
 Handles the launching of dask distributed on the cluster
 
@@ -93,7 +93,7 @@ Run a command on the cluster, master, or specific target (node name, public or i
 
 `
 def launch_instances_nonblocking()
-`
+`<br/>
 
 Launch instances without blocking the main thread.
 
@@ -101,7 +101,7 @@ Launch instances without blocking the main thread.
 
 `
 def launch_instances()
-`
+`<br/>
 
 Launch instances while blocking the main thread.
 
@@ -109,7 +109,7 @@ Launch instances while blocking the main thread.
 
 `
 def reconnect_to_cluster()
-`
+`<br/>
 Given a configured cluster object, reconnect to a cluster with the configured
 cluster_name
 
@@ -117,7 +117,7 @@ cluster_name
 
 `
 def stop_cluster()
-`
+`<br/>
 
 Stop a cluster, can later reconnect to it with `cluster.reconnect_to_cluster()`
 
@@ -125,6 +125,6 @@ Stop a cluster, can later reconnect to it with `cluster.reconnect_to_cluster()`
 
 `
 def terminate_cluster()
-`
+`<br/>
 
 Kill all instances on the current cluster
