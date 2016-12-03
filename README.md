@@ -9,8 +9,8 @@ Easy to use tool for quickly deploying temporary EC2 clusters on AWS completely 
 ## Install:
 `pip install git+git://github.com/milesgranger/cluster-clyde.git`
 
-Due to problems with gevent.monkey.patch_all() and Dask Distributed found in parallel-ssh master branch (as of 3 DEC 2016), 
-you should install my forked version of parallel-ssh library with an optional monkey_patch parameter with:
+Due to problems with `gevent.monkey.patch_all()` and Dask Distributed found in parallel-ssh master branch (as of 3 DEC 2016), 
+you should install my forked version of parallel-ssh library which has an optional monkey_patch parameter with:
 
 `pip install https://github.com/milesgranger/parallel-ssh/archive/optional_monkey_patch.zip`
 
@@ -27,7 +27,7 @@ You must have a `credentials` and `config` file located in your ~/.aws directory
 This is a requirement from AWS / Boto3. Given your aws_access_key_id, aws_secret_access_key from AWS console
 you can create these files with the following:
 
-`from cclyde.cluster import Cluster`
+`from cclyde.cluster import Cluster`<br/>
 `cluster = Cluster()`
 
 Make credentials file:
