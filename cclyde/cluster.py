@@ -60,7 +60,7 @@ class Cluster(object):
         logging.basicConfig()
         logging.captureWarnings(True)
         self.logger = logging.getLogger('Cluster-Clyde')
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(logging.INFO)
 
         # set attributes
         self.ami = ami
