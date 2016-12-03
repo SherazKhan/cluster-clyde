@@ -29,7 +29,7 @@ setup(name='cluster-clyde',
       author='Miles Granger',
       author_email='miles.granger@outlook.com',
       description='Cluster manager for AWS EC2 instances - Focus with Dask Distributed',
-      packages=find_packages('.', exclude=('examples', )),
+      packages=find_packages('.', exclude=('examples', 'docs', )),
       url='https://github.com/milesgranger/cluster-clyde',
       requires=['boto3', 'requests'],
       zip_safe=True
