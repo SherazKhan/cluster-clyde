@@ -1,3 +1,28 @@
+"""
+MIT License
+
+Copyright (c) 2016 Miles Granger
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
+
 import boto3
 import sys
 import time
@@ -191,6 +216,7 @@ class Cluster(object):
     def create_python_env(self, env_name, activate=True):
         """Creates a python env"""
         # TODO: Remember to add env_name to the self.python_env which will also update the path
+        raise NotImplementedError('Method not yet implemented, sorry')
         pass
 
 
@@ -310,7 +336,7 @@ class Cluster(object):
         # Load key and create new client; new every time in case hosts change.
         key = load_private_key(self.pem_key_path)
         client = ParallelSSHClient(hosts=[node.get('public_ip') for node in self.nodes_to_run_command],
-                                   user='ubuntu', pkey=key)
+                                   user='ubuntu', pkey=key, monkey_patch=False)
 
         # run command
         output = client.run_command(command)
