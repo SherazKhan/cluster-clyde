@@ -31,6 +31,6 @@ setup(name='cluster-clyde',
       description='Cluster manager for AWS EC2 instances - Focus with Dask Distributed',
       packages=find_packages('.', exclude=('examples', )),
       url='https://github.com/milesgranger/cluster-clyde',
-      requires=['boto3', 'requests', 'https://github.com/milesgranger/parallel-ssh/archive/optional_monkey_patch.zip'],
+      requires=['boto3', 'requests'],
       zip_safe=True
       )
