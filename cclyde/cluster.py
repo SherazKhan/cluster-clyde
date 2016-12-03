@@ -5,12 +5,9 @@ import os
 import logging
 import threading
 
-
 from pssh.pssh_client import ParallelSSHClient
 from pssh.utils import load_private_key
 from utils import get_ip, get_dask_permissions
-
-
 
 class Cluster(object):
 
@@ -20,8 +17,7 @@ class Cluster(object):
                  n_nodes=2,
                  ami='ami-40d28157',
                  instance_type='t2.micro',
-                 python_env='default',
-                 volume_size=0):
+                 python_env='default'):
         """
         Constructor for cluster management object
         :param key_name: str - string of existing key name, if it doesn't exist it will be created.
@@ -34,8 +30,6 @@ class Cluster(object):
         :param python_env: str - name of python environment to use,
                                  default --> /home/ubuntu/anaconda/bin,
                                  other --> /home/ubuntu/anaconda/envs/<python_env>/bin
-        :param volume_size: int - Size of attached volume to EC2 instance(s) in GB; 0 if no volume attached
-                                  if 0 - default instance storage is 8GB but will be lost upon cluster shutdown
         """
 
         logging.basicConfig()
@@ -51,7 +45,7 @@ class Cluster(object):
         self.n_nodes = n_nodes
         if self.n_nodes < 2:
             raise ValueError('Number of nodes should be >= 2')
-        self.volume_size = int(volume_size)
+
         self.instances = []
         self.security_group = None
         self.internet_gateway = None
@@ -253,6 +247,7 @@ class Cluster(object):
                                  target='master',
                                  python_env_cmd=False)
         sys.stdout.write('Done.\n')
+        time.sleep(4)  # Little bit of time for scheduler to get going, just in case
 
 
         # Launch the workers
@@ -270,17 +265,24 @@ class Cluster(object):
                          '\nWeb Dashboard should be available here: {0}:8787'.format(master.get('public_ip')))
 
 
-
     def run_cluster_command(self, command, target='cluster', python_env_cmd=False, return_output=False):
-
-
+        """
+        Run a command on the cluster, master, or specific target (node name, public or internal ip)
+        :param command: str - command to be executed. ie. 'date'
+        :param target: str - target node(s) to execute command on. cluster, master, exclude-master or the node name,
+                             internal ip, or public ip address
+        :param python_env_cmd: bool - If true, the absolute path to current python_env is used pre-pended to command.
+                                      ie. "python myscript.py" --> "/home/ubuntu/<python_env_path>/python myscript.py"
+        :param return_output: bool - Whether to print the stdout which results from the command.
+        :return: None
+        """
 
         # Assert the target is either the whole cluster, master, all but master or one of the specific nodes
         choices = ['cluster', 'master', 'exclude-master']
         choices.extend([node.get('host_name') for node in self.nodes])
         choices.extend([node.get('public_ip') for node in self.nodes])
         choices.extend([node.get('internal_ip') for node in self.nodes])
-        assert target in choices
+        assert target in choices, 'Target {} not in available targets: {}'.format(target, choices)
 
         # Determine what nodes to run this command on
         if target == 'cluster':
@@ -318,10 +320,15 @@ class Cluster(object):
         for host in output:
             sys.stdout.write('\n-------------------')
             exit_code = output[host]['exit_code']
-            if exit_code:
+
+            # If exit code was anything but 0, there was an error of some kind
+            # print the stderr
+            if exit_code != 0:
                 sys.stdout.write('\nError running command on host {} \n'.format(host))
                 for line in output[host]['stderr']:
                     sys.stdout.write(line)
+
+            # Error code is 0, print the exit codes
             else:
                 sys.stdout.write('\n\nHost: {}\tExit Code: {}\n'.format(host, exit_code))
 
@@ -332,9 +339,6 @@ class Cluster(object):
                     sys.stdout.write('\t\t' + line)
 
         del client
-
-
-
 
 
     def check_internet_gateway(self):
@@ -509,7 +513,6 @@ class Cluster(object):
                     raise Exception(exc)
 
 
-
     def launch_instances_nonblocking(self):
         """
         Launches EC2 instances, but doesn't block main thread
@@ -517,7 +520,6 @@ class Cluster(object):
         """
         self.instance_launching_thread = threading.Thread(target=self.launch_instances, )
         self.instance_launching_thread.start()
-
 
 
     def launch_instances(self):
@@ -556,8 +558,6 @@ class Cluster(object):
         # Assign full AWS EC2 instances to class var if needed later
         self.instances = instances
 
-        # install anaconda
-        self.install_anaconda()
         return
 
 
@@ -595,7 +595,6 @@ class Cluster(object):
         self.instances = instances
 
         return
-
 
 
     def wait_for_instances(self, instances):
