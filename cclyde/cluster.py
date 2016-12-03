@@ -5,10 +5,11 @@ import os
 import logging
 import threading
 
-from paramiko.client import SSHClient
-from paramiko import AutoAddPolicy
-from concurrent.futures import ThreadPoolExecutor
+
+from pssh.pssh_client import ParallelSSHClient
+from pssh.utils import load_private_key
 from utils import get_ip, get_dask_permissions
+
 
 
 class Cluster(object):
@@ -60,11 +61,6 @@ class Cluster(object):
         self.configured = False
         self.anaconda_installed = False
         self.cluster_name = cluster_name
-
-
-        # Object SSH #
-        self.ssh_client = SSHClient()
-        self.ssh_client.set_missing_host_key_policy(AutoAddPolicy())
 
 
         # Begin by just connecting to boto3, this alone ensures that user has config and credentials files in ~/.aws/
@@ -193,10 +189,9 @@ class Cluster(object):
         sys.stdout.write('Installing Anaconda on cluster...\n\n')
         command = 'wget https://raw.githubusercontent.com/milesgranger/cluster-clyde/master/cclyde/utils/anaconda_bootstrap.sh ' \
                   '&& bash anaconda_bootstrap.sh'
-        results = self.run_cluster_command(command, target='cluster', ignore_output=False)
+        self.run_cluster_command(command, target='cluster')
         self.anaconda_installed = True
         sys.stdout.write('Done.')
-        return results
 
 
     def create_python_env(self, env_name, activate=True):
@@ -222,19 +217,9 @@ class Cluster(object):
             else:
                 command = 'conda install {} -y'.format(package)
 
-            # Run the command to install this package, then iterate over all host results
-            results = self.run_cluster_command(command=command, target=target, python_env_cmd=True)
-            for result in results:
-                if only_exit_codes:
-                    to_print = '\n----------\n{} \tExit code: {}\n'.format(result.get('host_name'),
-                                                                           result.get('exit_code'))
-                else:
-                    to_print = '\n----------\n{} stdout: {}\nstderr: {}\nExit code: {}\n'.format(result.get('host_name'),
-                                                                                                 result.get('stdout'),
-                                                                                                 result.get('stderr'),
-                                                                                                 result.get('exit_code'))
-                sys.stdout.write(to_print)
-
+            # Run the command to install this package
+            self.run_cluster_command(command=command, target=target, python_env_cmd=True)
+            sys.stdout.write('\nInstalled {}\n'.format(package))
         return True
 
 
@@ -255,35 +240,30 @@ class Cluster(object):
 
         # Ensure distributed is installed on the cluster.
         sys.stdout.write('Installing dask.distributed on cluster\n')
-        output = self.run_cluster_command('{}conda install distributed -y'.format(self.python_env_path),
-                                          target='cluster',
-                                          ignore_output=False)
-        for r in output:
-            sys.stdout.write('\nNode: {} exit code: {}'.format(r.get('host_name'), r.get('exit_code')))
-            if r.get('exit_code'):
-                sys.stderr.write('\nStdout: {}\nStderr: {}\n'.format(r.get('stdout'), r.get('stderr')))
-        time.sleep(10)
+        self.run_cluster_command('{}conda install distributed -y'.format(self.python_env_path),
+                                 target='cluster')
+
 
         # Launch the scheduler on the master node
         sys.stdout.write('\nLaunching scheduler on master node...')
-        output = self.run_cluster_command('nohup {}dask-scheduler &'.format(self.python_env_path),
-                                          target='master',
-                                          python_env_cmd=False,
-                                          ignore_output=True)
-        time.sleep(5)
+        cmd = '{}dask-scheduler'.format(self.python_env_path, master.get('internal_ip'))
+        cmd = 'screen -dmS dask_screen {} && {}python -c "print()"'.format(cmd, self.python_env_path)
+        self.run_cluster_command(cmd,
+                                 return_output=True,
+                                 target='master',
+                                 python_env_cmd=False)
         sys.stdout.write('Done.\n')
 
 
         # Launch the workers
         sys.stdout.write('\nLaunching workers...')
         # TODO: Add ability for --nprocs & --nthreads; now it defaults to one process with threads == n_cores
-        output = self.run_cluster_command('nohup {}dask-worker {}:8786 &'.format(self.python_env_path,
-                                                                                 master.get('internal_ip')),
-                                          target='exclude-master',
-                                          python_env_cmd=False,
-                                          ignore_output=True)
-
-        time.sleep(5)
+        cmd = '{}dask-worker {}:8786'.format(self.python_env_path, master.get('internal_ip'))
+        cmd = 'screen -dmS dask_screen {} && {}python -c "print()"'.format(cmd, self.python_env_path)
+        self.run_cluster_command(cmd,
+                                 return_output=True,
+                                 target='exclude-master',
+                                 python_env_cmd=False)
         sys.stdout.write('Done.\n')
 
         sys.stdout.write('\nScheduler should be available here: {0}:8786'
@@ -291,22 +271,10 @@ class Cluster(object):
 
 
 
+    def run_cluster_command(self, command, target='cluster', python_env_cmd=False, return_output=False):
 
-    def run_cluster_command(self, command, target='cluster', python_env_cmd=False, ignore_output=False):
-        """
-        Runs arbitrary command on all nodes in cluster
 
-        command: str - command to run ie. "ls -l ~/"
 
-        target: str - one of either 'cluster', 'master', 'exclude-master', or specific node name
-
-        python_env_command: bool - if this is any command to use the environment's bin, the full path to the bin is
-                                   prepended infront of the command. ie <command> --> /home/ubuntu/anaconda/bin/<command>
-                                   IMPORTANT: if your python command includes something like: 'nohup <my_command>'
-                                   you should not set this because it would end up like: /home/ubuntu/anaconda/bin/nohup <my_command>
-
-        returns list of dicts generator with informaiton about node and given output form the command (if not ignore_output)
-        """
         # Assert the target is either the whole cluster, master, all but master or one of the specific nodes
         choices = ['cluster', 'master', 'exclude-master']
         choices.extend([node.get('host_name') for node in self.nodes])
@@ -320,7 +288,8 @@ class Cluster(object):
 
         elif target == 'master':
             self.nodes_to_run_command = [node for node in self.nodes if 'master' in node.get('host_name')]
-            assert len(self.nodes_to_run_command) == 1, 'Found more than one master: {}'.format(self.nodes_to_run_command)
+            assert len(self.nodes_to_run_command) == 1, 'Found more than one master: {}'.format(
+                self.nodes_to_run_command)
 
         elif target == 'exclude-master':
             self.nodes_to_run_command = [node for node in self.nodes if 'master' not in node.get('host_name')]
@@ -336,54 +305,34 @@ class Cluster(object):
         # prepend python_env_path if this is python command
         command = self.python_env_path + command if python_env_cmd else command
 
-        def run_command_on_node(node):
-            """Runs a command on given node; processed by threads"""
+        # Load key and create new client; new every time in case hosts change.
+        key = load_private_key(self.pem_key_path)
+        client = ParallelSSHClient(hosts=[node.get('public_ip') for node in self.nodes_to_run_command],
+                                   user='ubuntu', pkey=key)
 
-            result = dict(host_name=node.get('host_name'),
-                          public_ip=node.get('public_ip'),
-                          exit_code=None,
-                          stdout='',
-                          stderr='')
+        # run command
+        output = client.run_command(command)
+        client.join(output)
 
-            client = SSHClient()
-            client.set_missing_host_key_policy(AutoAddPolicy())
-            client.connect(hostname=node.get('public_ip'),
-                           username='ubuntu',
-                           key_filename=self.pem_key_path,
-                           timeout=60,
-                           banner_timeout=60)
-            channel = client.get_transport().open_session()
-            stdout = channel.makefile()
-            stderr = channel.makefile_stderr()
-            channel.exec_command(command=command)
+        # Print exit codes, or errors as they become available
+        for host in output:
+            sys.stdout.write('\n-------------------')
+            exit_code = output[host]['exit_code']
+            if exit_code:
+                sys.stdout.write('\nError running command on host {} \n'.format(host))
+                for line in output[host]['stderr']:
+                    sys.stdout.write(line)
+            else:
+                sys.stdout.write('\n\nHost: {}\tExit Code: {}\n'.format(host, exit_code))
 
-            # If user doesn't care about exit code, don't bother looking for output/exit code
-            if not ignore_output:
-                while True:
+            # Print stdout if wanted.
+            if return_output:
+                sys.stdout.write('\tSTDOUT for {}:\n'.format(host))
+                for line in output[host]['stdout']:
+                    sys.stdout.write('\t\t' + line)
 
-                    # If user deosn't want output, just look for the exit code.
-                    if stdout.readable():
-                        result['stdout'] += stdout.readline(size=2048)
-                    if stderr.readable():
-                        result['stderr'] += stderr.readline(size=2048)
+        del client
 
-                    if channel.exit_status_ready():
-                        result['exit_code'] = channel.exit_status
-                        break
-                    else:
-                        time.sleep(0.5)
-
-            # Close files and client connection
-            stderr.close()
-            stdout.close()
-            client.close()
-            return result
-
-        # Map nodes_to_run_command to function above
-        with ThreadPoolExecutor(max_workers=20) as executor:
-            results = executor.map(run_command_on_node, self.nodes_to_run_command)
-
-        return results
 
 
 
