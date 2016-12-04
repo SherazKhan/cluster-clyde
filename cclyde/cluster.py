@@ -81,18 +81,20 @@ class Cluster(object):
         self.anaconda_installed = False
         self.cluster_name = cluster_name
 
-
-        # Begin by just connecting to boto3, this alone ensures that user has config and credentials files in ~/.aws/
-        sys.stdout.write('Connecting to Boto3 and EC2 resources...')
-        self.ec2 = boto3.resource('ec2')
-        self.client = boto3.client('ec2')
-        sys.stdout.write('Done. \nReady to configure in preparation to launch cluster! Run: >>> cluster.configure()\n')
+        sys.stdout.write('\nYou can now run .configure()')
 
 
     def configure(self):
         """
         Runs all configuration methods, before start_cluster() method.
         """
+
+        # Begin by just connecting to boto3, this alone ensures that user has config and credentials files in ~/.aws/
+        sys.stdout.write('Connecting to Boto3 and EC2 resources...')
+        self.ec2 = boto3.resource('ec2')
+        self.client = boto3.client('ec2')
+        sys.stdout.write('Done.\n')
+
         sys.stdout.write('Checking keypair exists using key_name: "{}"...'.format(self.key_name))
         self.check_key()
         sys.stdout.write('Done.\n')
