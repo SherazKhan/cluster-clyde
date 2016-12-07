@@ -43,7 +43,7 @@ Make config file:<br/>
 **Launching a cluster**
 
 1. Create cluster object:<br/>
-`from cclyde.cluster import Cluster`
+`from cclyde.cluster import Cluster`<br/>
 `cluster = Cluster(key_name='default', 
                    n_nodes=4,
                    cluster_name='default',
