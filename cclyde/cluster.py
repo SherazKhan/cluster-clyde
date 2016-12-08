@@ -246,7 +246,8 @@ class Cluster(object):
 
 
     def launch_dask(self):
-        """On a running cluster with anaconda installs and launches dask distributed in the current python_env"""
+        """On a running cluster with anaconda installs and launches dask distributed in the current python_env
+        :returns scheduler's address:port - used by dask.Client to submit jobs to."""
 
         # Ensure anaconda has been installed on cluster
         if not self.anaconda_installed:
@@ -289,8 +290,11 @@ class Cluster(object):
                                  python_env_cmd=False)
         sys.stdout.write('Done.\n')
 
+        scheduler_address = '{}:8786'.format(master.get('public_ip'))
         sys.stdout.write('\nScheduler should be available here: {0}:8786'
-                         '\nWeb Dashboard should be available here: {0}:8787'.format(master.get('public_ip')))
+                         '\nWeb Dashboard should be available here: {0}:8787'.format(scheduler_address))
+
+        return scheduler_address
 
 
     def run_cluster_command(self, command, target='cluster', python_env_cmd=False, return_output=False):
