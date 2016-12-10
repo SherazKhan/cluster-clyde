@@ -7,7 +7,13 @@ Easy to use tool for quickly deploying temporary EC2 clusters on AWS completely 
 # Ready for Beta use; pull requests welcome!
 
 ## Install:
-`pip install git+git://github.com/milesgranger/cluster-clyde.git`
+
+`git clone https://github.com/milesgranger/cluster-clyde.git`
+`cd cluster-clyde`
+`python setup.py install`
+
+**Note** `pip install git+git://github.com/milesgranger/cluster-clyde.git` does not work because this package requires a modified forked version of Parallel-SSH<br/>
+This should be fixed in the near future.
 
 ## Uninstall:
 `pip uninstall cluster-clyde`
