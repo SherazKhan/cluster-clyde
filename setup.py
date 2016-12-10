@@ -23,7 +23,6 @@ SOFTWARE.
 """
 
 from setuptools import setup, find_packages
-import os
 
 setup(name='cluster-clyde',
       version='0.0.1',
@@ -33,10 +32,9 @@ setup(name='cluster-clyde',
       packages=find_packages('.', exclude=('examples', 'docs', )),
       url='https://github.com/milesgranger/cluster-clyde',
       install_requires=['boto3',
-                        'NoPatchParallelSSH',
-                        'requests'],
-      dependency_links=['https://github.com/milesgranger/parallel-ssh/tarball/optional_monkey_patch#egg=NoPatchParallelSSH', ],
+                        'requests',
+                        'opt-monkey',
+                        ],
+      dependency_links=['https://github.com/milesgranger/parallel-ssh/tarball/opt-monkey#egg=opt-monkey', ],
       zip_safe=True
       )
-
-
