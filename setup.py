@@ -25,8 +25,6 @@ SOFTWARE.
 from setuptools import setup, find_packages
 import os
 
-os.system('pip install git+https://github.com/milesgranger/parallel-ssh/archive/0.93.0-opt-monkey.zip')
-
 setup(name='cluster-clyde',
       version='0.0.1',
       author='Miles Granger',
@@ -35,7 +33,9 @@ setup(name='cluster-clyde',
       packages=find_packages('.', exclude=('examples', 'docs', )),
       url='https://github.com/milesgranger/cluster-clyde',
       install_requires=['boto3',
+                        'NoPatchParallelSSH>=1.0',
                         'requests'],
+      dependency_links=['https://github.com/milesgranger/parallel-ssh/tarball/optional_monkey_patch#egg=NoPatchParallelSSH-1.0', ],
       zip_safe=True
       )
 
