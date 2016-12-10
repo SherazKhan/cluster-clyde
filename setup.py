@@ -32,5 +32,6 @@ setup(name='cluster-clyde',
       packages=find_packages('.', exclude=('examples', 'docs', )),
       url='https://github.com/milesgranger/cluster-clyde',
       requires=['boto3', 'requests'],
+      dependency_links=['https://github.com/milesgranger/parallel-ssh/archive/optional_monkey_patch.zip', ],
       zip_safe=True
       )
