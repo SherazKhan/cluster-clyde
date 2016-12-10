@@ -30,21 +30,13 @@ Constructor for cluster management object
 ---
 
 `
-def configure()
-`<br/>
-Runs all configuration methods, before start_cluster() method.
-
-
----
-
-`
 def make_credentials_file(aws_access_key_id, aws_secret_access_key)
 `<br/>
 *static method*
 Creates a credential file for user
 be careful, this overwrites any existing credential file
-@:param aws_access_key_id: str - Access key id given by AWS
-@:param aws_secret_access_key: str - secret key provided in association with key id from AWS
+:param aws_access_key_id: str - Access key id given by AWS
+:param aws_secret_access_key: str - secret key provided in association with key id from AWS
 
 ---
 
@@ -58,10 +50,26 @@ be careful, this overwrites any existing config file
 ---
 
 `
+def configure()
+`<br/>
+Runs all configuration methods, before start_cluster() method.
+
+
+---
+
+`
+def install_anaconda()
+`<br/>
+
+Installs the Anaconda Distribution of Python on all nodes
+
+---
+
+`
 def install_python_packages(packages, method='pip', target='cluster', only_exit_codes=True)
 `<br/>
 
-Convienience function to install python package(s)
+Convenience function to install python package(s)
 packages: list - list of packages to install into current python_env environment. ie ['numpy', 'pandas==18.0']
 For more control over installation of packages to specific nodes use
 run_cluster_command('pip install <package>', target=<node name>, python_env_cmd=True)
@@ -72,7 +80,9 @@ run_cluster_command('pip install <package>', target=<node name>, python_env_cmd=
 def launch_dask()
 `<br/>
 
-Handles the launching of dask distributed on the cluster
+Handles the launching of dask distributed on the cluster. This ensures Dask.Distributed is installed, and then launches
+the scheduler on the master node and connects all Dask workers to the scheduler endpoint. Returns the scheduler endpoint; 
+<scheduler_public_ip>:8786
 
 ---
 
@@ -119,7 +129,8 @@ cluster_name
 def stop_cluster()
 `<br/>
 
-Stop a cluster, can later reconnect to it with `cluster.reconnect_to_cluster()`
+Stop a cluster, can later reconnect to it with `cluster.reconnect_to_cluster()` <br/>
+**NOTE**: The `cluster_name` attribute must be the same in order to reconnect to a stopped cluster.
 
 ---
 
