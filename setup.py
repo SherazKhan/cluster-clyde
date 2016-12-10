@@ -33,7 +33,7 @@ setup(name='cluster-clyde',
       url='https://github.com/milesgranger/cluster-clyde',
       install_requires=['boto3',
                         'parallel-ssh==0+unknown',
-                        'requests']
+                        'requests'],
       dependency_links=['https://github.com/milesgranger/parallel-ssh/archive/optional_monkey_patch.zip', ],
       zip_safe=True
       )
