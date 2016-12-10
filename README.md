@@ -9,12 +9,6 @@ Easy to use tool for quickly deploying temporary EC2 clusters on AWS completely 
 ## Install:
 `pip install git+git://github.com/milesgranger/cluster-clyde.git`
 
-Due to problems with `gevent.monkey.patch_all()` and Dask Distributed found in parallel-ssh master branch (as of 3 DEC 2016), 
-you should install my forked version of parallel-ssh library which has an optional monkey_patch parameter with:
-
-`pip install https://github.com/milesgranger/parallel-ssh/archive/optional_monkey_patch.zip`
-
-
 ## Uninstall:
 `pip uninstall cluster-clyde`
 
