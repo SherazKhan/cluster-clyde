@@ -25,6 +25,8 @@ SOFTWARE.
 from setuptools import setup, find_packages
 import os
 
+os.system('pip install git+https://github.com/milesgranger/parallel-ssh/archive/0.93.0-opt-monkey.zip')
+
 setup(name='cluster-clyde',
       version='0.0.1',
       author='Miles Granger',
@@ -37,4 +39,4 @@ setup(name='cluster-clyde',
       zip_safe=True
       )
 
-os.system('pip install git+https://github.com/milesgranger/parallel-ssh/archive/0.93.0-opt-monkey.zip')
+
