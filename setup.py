@@ -33,9 +33,9 @@ setup(name='cluster-clyde',
       packages=find_packages('.', exclude=('examples', 'docs', )),
       url='https://github.com/milesgranger/cluster-clyde',
       install_requires=['boto3',
-                        'NoPatchParallelSSH>=1.0',
+                        'NoPatchParallelSSH',
                         'requests'],
-      dependency_links=['https://github.com/milesgranger/parallel-ssh/tarball/optional_monkey_patch#egg=NoPatchParallelSSH-1.0', ],
+      dependency_links=['https://github.com/milesgranger/parallel-ssh/tarball/optional_monkey_patch#egg=NoPatchParallelSSH', ],
       zip_safe=True
       )
 
