@@ -290,11 +290,11 @@ class Cluster(object):
                                  python_env_cmd=False)
         sys.stdout.write('Done.\n')
 
-        scheduler_address = '{}:8786'.format(master.get('public_ip'))
+        scheduler_address = '{}'.format(master.get('public_ip'))
         sys.stdout.write('\nScheduler should be available here: {0}:8786'
                          '\nWeb Dashboard should be available here: {0}:8787'.format(scheduler_address))
 
-        return scheduler_address
+        return scheduler_address + '8786'
 
 
     def run_cluster_command(self, command, target='cluster', python_env_cmd=False, return_output=False):
