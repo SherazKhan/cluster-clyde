@@ -32,12 +32,13 @@ import threading
 
 from pssh.pssh_client import ParallelSSHClient
 from pssh.utils import load_private_key
-from utils import get_ip, get_dask_permissions
+from cclyde.utils import get_ip, get_dask_permissions
 
 class Cluster(object):
 
     def __init__(self,
                  key_name='cclyde_default',
+                 aws_profile='default',
                  cluster_name='default',
                  n_nodes=2,
                  ami='ami-40d28157',
@@ -47,6 +48,7 @@ class Cluster(object):
         Constructor for cluster management object
         :param key_name: str - string of existing key name, if it doesn't exist it will be created.
                               this only refers to the name as: '<pem_key>.pem'
+        :param aws_profile: str - The profile to  use in ~/.aws/credentials file
         :param cluster_name: str - name of this new cluster, this is given as a tag to created instances to allow
                reconnection/starting of instances.
         :param n_nodes: int - Number of nodes to launch
@@ -64,6 +66,8 @@ class Cluster(object):
 
         # set attributes
         self.ami = ami
+        self.aws_profile = aws_profile
+        self.aws_session = None
         self.instance_type = instance_type
         self.key_name = key_name if not key_name.endswith('.pem') else key_name.replace('.pem', '')
         self.pem_key_path = None
@@ -91,8 +95,10 @@ class Cluster(object):
 
         # Begin by just connecting to boto3, this alone ensures that user has config and credentials files in ~/.aws/
         sys.stdout.write('Connecting to Boto3 and EC2 resources...')
-        self.ec2 = boto3.resource('ec2')
-        self.client = boto3.client('ec2')
+        self.aws_session = boto3.Session(profile_name=self.aws_profile)
+        #self.ec2 = boto3.resource('ec2')
+        self.ec2 = self.aws_session.resource('ec2')
+        self.client = self.aws_session.client('ec2')
         sys.stdout.write('Done.\n')
 
         sys.stdout.write('Checking keypair exists using key_name: "{}"...'.format(self.key_name))
@@ -245,58 +251,6 @@ class Cluster(object):
         return True
 
 
-    def launch_dask(self):
-        """On a running cluster with anaconda installs and launches dask distributed in the current python_env
-        :returns scheduler's address:port - used by dask.Client to submit jobs to."""
-
-        # Ensure anaconda has been installed on cluster
-        if not self.anaconda_installed:
-            raise AssertionError('Need to have anaconda installed on cluster; run >>>cluster.install_anaconda()')
-
-        # Locate mater, to use its internal ip address for worker nodes to connect to
-        master = filter(lambda node: node.get('host_name', '').endswith('master'), self.nodes)
-        if master:
-            master = master[0]
-        else:
-            raise Warning('Master node not found in self.nodes')
-
-
-        # Ensure distributed is installed on the cluster.
-        sys.stdout.write('Installing dask.distributed on cluster\n')
-        self.run_cluster_command('{}conda install distributed -y'.format(self.python_env_path),
-                                 target='cluster')
-
-
-        # Launch the scheduler on the master node
-        sys.stdout.write('\nLaunching scheduler on master node...')
-        cmd = '{}dask-scheduler'.format(self.python_env_path, master.get('internal_ip'))
-        cmd = 'screen -dmS dask_screen {} && {}python -c "print()"'.format(cmd, self.python_env_path)
-        self.run_cluster_command(cmd,
-                                 return_output=True,
-                                 target='master',
-                                 python_env_cmd=False)
-        sys.stdout.write('Done.\n')
-        time.sleep(4)  # Little bit of time for scheduler to get going, just in case
-
-
-        # Launch the workers
-        sys.stdout.write('\nLaunching workers...')
-        # TODO: Add ability for --nprocs & --nthreads; now it defaults to one process with threads == n_cores
-        cmd = '{}dask-worker {}:8786'.format(self.python_env_path, master.get('internal_ip'))
-        cmd = 'screen -dmS dask_screen {} && {}python -c "print()"'.format(cmd, self.python_env_path)
-        self.run_cluster_command(cmd,
-                                 return_output=True,
-                                 target='exclude-master',
-                                 python_env_cmd=False)
-        sys.stdout.write('Done.\n')
-
-        scheduler_address = '{}'.format(master.get('public_ip'))
-        sys.stdout.write('\nScheduler should be available here: {0}:8786'
-                         '\nWeb Dashboard should be available here: {0}:8787'.format(scheduler_address))
-
-        return scheduler_address + '8786'
-
-
     def run_cluster_command(self, command, target='cluster', python_env_cmd=False, return_output=False):
         """
         Run a command on the cluster, master, or specific target (node name, public or internal ip)
@@ -342,7 +296,8 @@ class Cluster(object):
         # Load key and create new client; new every time in case hosts change.
         key = load_private_key(self.pem_key_path)
         client = ParallelSSHClient(hosts=[node.get('public_ip') for node in self.nodes_to_run_command],
-                                   user='ubuntu', pkey=key, monkey_patch=False)
+                                   user='ubuntu',
+                                   pkey=key)
 
         # run command
         output = client.run_command(command)
