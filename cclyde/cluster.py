@@ -72,15 +72,15 @@ class Cluster(object):
         self.key_name = key_name if not key_name.endswith('.pem') else key_name.replace('.pem', '')
         self.pem_key_path = None
         self.n_nodes = n_nodes
-        if self.n_nodes < 2:
-            raise ValueError('Number of nodes should be >= 2')
+        if self.n_nodes < 1:
+            raise ValueError('Number of nodes should be >= 1')
 
         self.instances = []
         self.security_group = None
         self.internet_gateway = None
         self.route_table = None
         self.nodes_to_run_command = []
-        self.python_env = python_env.lower().strip()
+        self.python_env = python_env.strip()
         self.configured = False
         self.anaconda_installed = False
         self.cluster_name = cluster_name
@@ -211,6 +211,14 @@ class Cluster(object):
                                if python_env == 'default' else '/home/ubuntu/anaconda/envs/{}/bin/'.format(python_env)
 
 
+    def monitor(self):
+        """
+        Return statistics about nodes in the cluser, memory and cpu useage
+        """
+        # TODO: maybe make this into its own class to launch as web monitoring console?
+        pass
+
+
     def install_anaconda(self):
         """Installs Anaconda on all cluster nodes"""
         sys.stdout.write('Installing Anaconda on cluster...\n\n')
@@ -228,7 +236,7 @@ class Cluster(object):
         pass
 
 
-    def install_python_packages(self, packages, method='pip', target='cluster', only_exit_codes=True):
+    def install_python_packages(self, packages, method='pip', target='cluster'):
         """
         Convienience function to install python package(s)
         packages: list - list of packages to install into current python_env environment. ie ['numpy', 'pandas==18.0']
